@@ -216,7 +216,7 @@ else()
             -Wl,--version-script,${CMAKE_CURRENT_BINARY_DIR}/clang_rt.ubsan_standalone-dynamic-${arch}.vers)
         # The Solaris 11.4 linker supports a subset of GNU ld version scripts,
         # but requires a special option to enable it.
-        if (COMPILER_RT_HAS_GNU_VERSION_SCRIPT_COMPAT)
+        if (COMPILER_RT_HAS_GNU_VERSION_SCRIPT_COMPAT AND (${CMAKE_SYSTEM_NAME} MATCHES "Solaris"))
             list(APPEND VERSION_SCRIPT_FLAG -Wl,-z,gnu-version-script-compat)
         endif()
         set_property(SOURCE

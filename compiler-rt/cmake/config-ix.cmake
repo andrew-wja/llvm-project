@@ -167,7 +167,7 @@ file(WRITE ${DUMMY_VERS} "{};")
 set(VERS_OPTION "-Wl,--version-script,${DUMMY_VERS}")
 if(COMPILER_RT_HAS_GNU_VERSION_SCRIPT_COMPAT)
   # Solaris 11.4 ld only supports --version-script with
-  # -z gnu-version-script-compat. 
+  # -z gnu-version-script-compat.
   string(APPEND VERS_OPTION " ${VERS_COMPAT_OPTION}")
 endif()
 check_linker_flag("${VERS_OPTION}" COMPILER_RT_HAS_VERSION_SCRIPT)
@@ -300,6 +300,7 @@ set(ALL_ASAN_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64} ${RISCV64}
     ${MIPS32} ${MIPS64} ${PPC64} ${S390X} ${SPARC} ${SPARCV9})
 set(ALL_CRT_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64} ${RISCV32} ${RISCV64})
 set(ALL_DFSAN_SUPPORTED_ARCH ${X86_64} ${MIPS64} ${ARM64})
+set(ALL_EXAMPLESAN_SUPPORTED_ARCH ${ALL_SANITIZER_COMMON_SUPPORTED_ARCH})
 
 if(ANDROID)
   set(OS_NAME "Android")
@@ -586,6 +587,9 @@ if(APPLE)
   list_intersect(SHADOWCALLSTACK_SUPPORTED_ARCH
     ALL_SHADOWCALLSTACK_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
+  list_intersect(EXAMPLESAN_SUPPORTED_ARCH
+    ALL_EXAMPLESAN_SUPPORTED_ARCH
+    SANITIZER_COMMON_SUPPORTED_ARCH)
 
 else()
   filter_available_targets(CRT_SUPPORTED_ARCH ${ALL_CRT_SUPPORTED_ARCH})
@@ -617,6 +621,7 @@ else()
   filter_available_targets(SHADOWCALLSTACK_SUPPORTED_ARCH
     ${ALL_SHADOWCALLSTACK_SUPPORTED_ARCH})
   filter_available_targets(GWP_ASAN_SUPPORTED_ARCH ${ALL_GWP_ASAN_SUPPORTED_ARCH})
+  filter_available_targets(EXAMPLESAN_SUPPORTED_ARCH ${ALL_EXAMPLESAN_SUPPORTED_ARCH})
 endif()
 
 if (MSVC)
@@ -639,7 +644,7 @@ if(COMPILER_RT_SUPPORTED_ARCH)
 endif()
 message(STATUS "Compiler-RT supported architectures: ${COMPILER_RT_SUPPORTED_ARCH}")
 
-set(ALL_SANITIZERS asan;dfsan;msan;hwasan;tsan;safestack;cfi;scudo;ubsan_minimal;gwp_asan)
+set(ALL_SANITIZERS asan;dfsan;msan;hwasan;tsan;safestack;cfi;scudo;ubsan_minimal;gwp_asan;examplesan)
 set(COMPILER_RT_SANITIZERS_TO_BUILD all CACHE STRING
     "sanitizers to build if supported on the target (all;${ALL_SANITIZERS})")
 list_replace(COMPILER_RT_SANITIZERS_TO_BUILD all "${ALL_SANITIZERS}")
@@ -789,6 +794,13 @@ if (COMPILER_RT_HAS_SANITIZER_COMMON AND SHADOWCALLSTACK_SUPPORTED_ARCH AND
   set(COMPILER_RT_HAS_SHADOWCALLSTACK TRUE)
 else()
   set(COMPILER_RT_HAS_SHADOWCALLSTACK FALSE)
+endif()
+
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND EXAMPLESAN_SUPPORTED_ARCH AND
+    OS_NAME MATCHES "Linux")
+  set(COMPILER_RT_HAS_EXAMPLESAN TRUE)
+else()
+  set(COMPILER_RT_HAS_EXAMPLESAN FALSE)
 endif()
 
 # Note: Fuchsia and Windows are not currently supported by GWP-ASan. Support

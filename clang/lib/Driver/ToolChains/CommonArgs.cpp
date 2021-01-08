@@ -776,7 +776,9 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
   const SanitizerArgs &SanArgs = TC.getSanitizerArgs();
   // Collect shared runtimes.
   if (SanArgs.needsSharedRt()) {
-    if (SanArgs.needsAsanRt() && SanArgs.linkRuntimes()) {
+    if (SanArgs.needsExamplesanRt() && SanArgs.linkRuntimes()) {
+      SharedRuntimes.push_back("example");
+    }if (SanArgs.needsAsanRt() && SanArgs.linkRuntimes()) {
       SharedRuntimes.push_back("asan");
       if (!Args.hasArg(options::OPT_shared) && !TC.getTriple().isAndroid())
         HelperStaticRuntimes.push_back("asan-preinit");
