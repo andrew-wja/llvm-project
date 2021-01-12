@@ -750,6 +750,13 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addHWAddressSanitizerPasses);
   }
 
+  if (LangOpts.Sanitize.has(SanitizerKind::Example)) {
+    PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
+                           addExampleSanitizerPass);
+    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
+                           addExampleSanitizerPass);
+  }
+
   if (LangOpts.Sanitize.has(SanitizerKind::KernelHWAddress)) {
     PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
                            addKernelHWAddressSanitizerPasses);

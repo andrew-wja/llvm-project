@@ -131,21 +131,14 @@ PreservedAnalyses ExampleSanitizerPass::run(Module &M,
 /// inserts a call to __examplesan_init to the module's constructor list.
 void ExampleSanitizer::initializeModule() {
   LLVM_DEBUG(dbgs() << "Init " << M.getName() << "\n");
-  auto &DL = M.getDataLayout();
-
-  TargetTriple = Triple(M.getTargetTriple());
-
-  Mapping.init(TargetTriple);
-
   C = &(M.getContext());
 
   ExamplesanCtorFunction = nullptr;
-  createExamplesanCtorComdat();
 }
 
 void ExampleSanitizer::initializeCallbacks(Module &M) {
   IRBuilder<> IRB(*C);
-  ExamplesanHelloFunc = M.getOrInsertFunction("__examplesan_hello", IRB.getVoidTy());
+  //~ auto ExamplesanHelloFunc = M.getOrInsertFunction("__examplesan_hello", IRB.getVoidTy());
 }
 
 bool ExampleSanitizer::sanitizeFunction(Function &F) {
@@ -157,14 +150,14 @@ bool ExampleSanitizer::sanitizeFunction(Function &F) {
   if (F.getName().compare("main") == 0) {
     Instruction *InsertPt = &*F.getEntryBlock().begin();
     IRB.SetInsertPoint(InsertPt);
-    Constant * examplesan_entry = F.getParent()->getOrInsertFunction("__examplesan_entry", IRB.getVoidTy());
+    FunctionCallee examplesan_entry = F.getParent()->getOrInsertFunction("__examplesan_entry", IRB.getVoidTy());
     IRB.CreateCall(examplesan_entry, {});
 
     for (auto &BB : F) {
       for (auto &Inst : BB) {
-        if (auto * ret = dyn_cast<ReturnInst>(&inst)) {
+        if (auto * ret = dyn_cast<ReturnInst>(&Inst)) {
           IRB.SetInsertPoint(ret);
-          Constant * examplesan_exit = F.getParent()->getOrInsertFunction("__examplesan_exit", IRB.getVoidTy());
+          FunctionCallee examplesan_exit = F.getParent()->getOrInsertFunction("__examplesan_exit", IRB.getVoidTy());
           IRB.CreateCall(examplesan_exit, {});
         }
       }

@@ -150,6 +150,7 @@ void initializeEarlyTailDuplicatePass(PassRegistry&);
 void initializeEdgeBundlesPass(PassRegistry&);
 void initializeEliminateAvailableExternallyLegacyPassPass(PassRegistry&);
 void initializeEntryExitInstrumenterPass(PassRegistry&);
+void initializeExampleSanitizerLegacyPassPass(PassRegistry &);
 void initializeExpandMemCmpPassPass(PassRegistry&);
 void initializeExpandPostRAPass(PassRegistry&);
 void initializeExpandReductionsPass(PassRegistry&);

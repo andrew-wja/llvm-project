@@ -49,7 +49,7 @@ void NOINLINE examplesan_Init() __attribute__((constructor(0))) {
 
   __examplesan::examplesan_InitInterceptors();
 
-  metadata.count = 0;
+  __examplesan::metadata.count = 0;
 
   VReport(2, "Initialized examplesan runtime!\n");
 }
@@ -59,6 +59,6 @@ void NOINLINE examplesan_Init() __attribute__((constructor(0))) {
 void * NOINLINE __examplesan::examplesan_Malloc(uptr size) {
   void * ret = REAL(malloc)(size);
   Printf("Examplesan: malloc\n");
-  metadata.count += 1;
+  __examplesan::metadata.count += 1;
   return ret;
 }
