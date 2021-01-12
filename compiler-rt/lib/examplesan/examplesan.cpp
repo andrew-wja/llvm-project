@@ -8,7 +8,7 @@ INTERCEPTOR(void *, malloc, uptr size) {
   return __examplesan::examplesan_Malloc(size);
 }
 
-void __examplesan::examplesan_InitInterceptors() {
+void NOINLINE __examplesan::examplesan_InitInterceptors() {
   INTERCEPT_FUNCTION(malloc);
 }
 
@@ -22,7 +22,7 @@ static struct {
 
 }
 
-void __examplesan::examplesan_AllocateShadowMemory() {
+void NOINLINE __examplesan::examplesan_AllocateShadowMemory() {
   metadata.size = 1000 * sizeof(*metadata.start);
   metadata.start = (char*)MmapNoReserveOrDie(metadata.size, "Simple Shadow Memory");
   metadata.end = metadata.start + metadata.size;
@@ -31,26 +31,25 @@ void __examplesan::examplesan_AllocateShadowMemory() {
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void __examplesan::examplesan_AfterMalloc(char * value) {
+void NOINLINE __examplesan::examplesan_AfterMalloc(char * value) {
   //Printf is sanitizer internal printf
   Printf("Malloc returned address %x\n", value);
   return;
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void __examplesan::examplesan_HelloFunction(char * func_name) {
-  //puts("Printing function name!");
+void NOINLINE __examplesan::__examplesan_entry() {
+  Printf("Examplesan: entry\n");
   return;
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void __examplesan::examplesan_EndOfMain() {
-  //internal strlen is from the sanitizer runtimes libc imp.
-  write(1, "End of main function!\n", internal_strlen("End of main function!\n"));
+void NOINLINE __examplesan::__examplesan_exit() {
+  Printf("Examplesan: exit\n");
   return;
 }
 
-void * __examplesan::examplesan_Malloc(uptr size) {
+void * NOINLINE __examplesan::examplesan_Malloc(uptr size) {
   //This is how you call real malloc
   //~ void * ret = REAL(malloc)(size);
   write(1, "Hooked malloc!\n", internal_strlen("Hooked malloc!\n"));
@@ -59,7 +58,7 @@ void * __examplesan::examplesan_Malloc(uptr size) {
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void examplesan_Init() __attribute__((constructor(0))) {
+void NOINLINE examplesan_Init() __attribute__((constructor(0))) {
   //Set sanitizer tool name, not required.
   SanitizerToolName = "examplesan";
 
