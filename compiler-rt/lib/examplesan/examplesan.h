@@ -11,10 +11,9 @@
 namespace __examplesan {
 
 extern "C" {
-void examplesan_AllocateShadowMemory();
 void __examplesan_entry();
 void __examplesan_exit();
-void examplesan_AfterMalloc(char * addr);
+void __examplesan_hello();
 }
 void * examplesan_Malloc(__sanitizer::uptr size);
 void examplesan_InitInterceptors();

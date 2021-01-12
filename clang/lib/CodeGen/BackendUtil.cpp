@@ -69,6 +69,7 @@
 #include "llvm/Transforms/Instrumentation/DataFlowSanitizer.h"
 #include "llvm/Transforms/Instrumentation/GCOVProfiler.h"
 #include "llvm/Transforms/Instrumentation/HWAddressSanitizer.h"
+#include "llvm/Transforms/Instrumentation/ExampleSanitizer.h"
 #include "llvm/Transforms/Instrumentation/InstrProfiling.h"
 #include "llvm/Transforms/Instrumentation/MemProfiler.h"
 #include "llvm/Transforms/Instrumentation/MemorySanitizer.h"
@@ -212,6 +213,11 @@ static void addAddDiscriminatorsPass(const PassManagerBuilder &Builder,
 static void addBoundsCheckingPass(const PassManagerBuilder &Builder,
                                   legacy::PassManagerBase &PM) {
   PM.add(createBoundsCheckingLegacyPass());
+}
+
+static void addExampleSanitizerPass(const PassManagerBuilder &Builder,
+                                    legacy::PassManagerBase &PM) {
+  PM.add(createExampleSanitizerLegacyPassPass());
 }
 
 static SanitizerCoverageOptions
