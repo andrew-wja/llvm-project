@@ -1,17 +1,8 @@
 #include "examplesan/examplesan.h"
-#include <unistd.h>
-
 
 using namespace __sanitizer;
 
-INTERCEPTOR(void *, malloc, uptr size) {
-  return __examplesan::examplesan_Malloc(size);
-}
-
-void NOINLINE __examplesan::examplesan_InitInterceptors() {
-  INTERCEPT_FUNCTION(malloc);
-}
-
+// This example sanitizer tracks the number of times malloc() was called
 namespace __examplesan {
 
 static struct {
@@ -21,44 +12,35 @@ static struct {
 }
 
 extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void NOINLINE __examplesan::__examplesan_entry() {
-  Printf("Examplesan: entry\n");
-  return;
-}
-
-extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void NOINLINE __examplesan::__examplesan_hello() {
-  Printf("Examplesan: hello!\n");
-  return;
-}
-
-extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void NOINLINE __examplesan::__examplesan_exit() {
-  Printf("Examplesan: exit\n");
-  Printf("Saw %g malloc calls\n", metadata.count);
-  return;
-}
-
-extern "C" SANITIZER_INTERFACE_ATTRIBUTE
-void NOINLINE examplesan_Init() __attribute__((constructor(0))) {
+void NOINLINE __examplesan::__examplesan_init() {
+  Printf("Examplesan: init\n");
   //Set sanitizer tool name, not required.
   SanitizerToolName = "examplesan";
 
   //Sanitizers have a lot of flags (sanitizer_flags.inc)
   SetCommonFlagsDefaults();
 
-  __examplesan::examplesan_InitInterceptors();
-
   __examplesan::metadata.count = 0;
 
+  __sanitizer_install_malloc_and_free_hooks(&__examplesan::examplesan_malloc_hook,
+                                            &__examplesan::examplesan_free_hook);
+
   VReport(2, "Initialized examplesan runtime!\n");
+  return;
 }
 
-// Interceptor implementations
+extern "C" SANITIZER_INTERFACE_ATTRIBUTE
+void NOINLINE __examplesan::__examplesan_exit() {
+  Printf("Examplesan: exit\n");
+  Printf("Saw %d malloc calls\n", metadata.count);
+  return;
+}
 
-void * NOINLINE __examplesan::examplesan_Malloc(uptr size) {
-  void * ret = REAL(malloc)(size);
-  Printf("Examplesan: malloc\n");
+void NOINLINE __examplesan::examplesan_malloc_hook(const void* ptr, uptr size) {
   __examplesan::metadata.count += 1;
-  return ret;
+  return;
+}
+
+void NOINLINE __examplesan::examplesan_free_hook(const void *ptr) {
+  return;
 }

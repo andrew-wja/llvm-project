@@ -138,7 +138,6 @@ void ExampleSanitizer::initializeModule() {
 
 void ExampleSanitizer::initializeCallbacks(Module &M) {
   IRBuilder<> IRB(*C);
-  //~ auto ExamplesanHelloFunc = M.getOrInsertFunction("__examplesan_hello", IRB.getVoidTy());
 }
 
 bool ExampleSanitizer::sanitizeFunction(Function &F) {
@@ -150,7 +149,7 @@ bool ExampleSanitizer::sanitizeFunction(Function &F) {
   if (F.getName().compare("main") == 0) {
     Instruction *InsertPt = &*F.getEntryBlock().begin();
     IRB.SetInsertPoint(InsertPt);
-    FunctionCallee examplesan_entry = F.getParent()->getOrInsertFunction("__examplesan_entry", IRB.getVoidTy());
+    FunctionCallee examplesan_entry = F.getParent()->getOrInsertFunction("__examplesan_init", IRB.getVoidTy());
     IRB.CreateCall(examplesan_entry, {});
 
     for (auto &BB : F) {

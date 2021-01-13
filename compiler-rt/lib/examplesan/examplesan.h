@@ -1,9 +1,12 @@
+#ifndef EXAMPLESAN_H
+#define EXAMPLESAN_H
+
+#include "sanitizer_common/sanitizer_allocator.h"
+#include "sanitizer_common/sanitizer_allocator_checks.h"
+#include "sanitizer_common/sanitizer_allocator_interface.h"
+#include "sanitizer_common/sanitizer_allocator_report.h"
 #include "sanitizer_common/sanitizer_common.h"
-#include "sanitizer_common/sanitizer_internal_defs.h"
-#include "sanitizer_common/sanitizer_stacktrace.h"
-#include "sanitizer_common/sanitizer_libc.h"
-#include "sanitizer_common/sanitizer_flag_parser.h"
-#include "sanitizer_common/sanitizer_flags.h"
+
 #include "interception/interception.h"
 #include "sanitizer_common/sanitizer_platform_interceptors.h"
 #include "sanitizer_common/sanitizer_linux.h"
@@ -11,11 +14,11 @@
 namespace __examplesan {
 
 extern "C" {
-void __examplesan_entry();
+void __examplesan_init();
 void __examplesan_exit();
-void __examplesan_hello();
 }
-void * examplesan_Malloc(__sanitizer::uptr size);
-void examplesan_InitInterceptors();
+void examplesan_malloc_hook(const void* ptr, __sanitizer::uptr size);
+void examplesan_free_hook(const void * ptr);
+}
 
-}
+#endif // EXAMPLESAN_H
