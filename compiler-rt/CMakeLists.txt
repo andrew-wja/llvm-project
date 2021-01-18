@@ -69,6 +69,9 @@ if (NOT COMPILER_RT_ASAN_SHADOW_SCALE STREQUAL "")
       -D${COMPILER_RT_ASAN_SHADOW_SCALE_DEFINITION})
 endif()
 
+set(COMPILER_RT_DUMMYSAN_CONTAINS_UBSAN ON CACHE BOOL
+    "Enable ubsan as a plugin in DummySan")
+
 set(COMPILER_RT_HWASAN_WITH_INTERCEPTORS ON CACHE BOOL
     "Enable libc interceptors in HWASan (testing mode)")
 

@@ -1452,6 +1452,7 @@ enum : unsigned {
 // LLVM-specific notes.
 enum {
   NT_LLVM_HWASAN_GLOBALS = 3,
+  NT_LLVM_DUMMYSAN_GLOBALS = 4,
 };
 
 // GNU note types

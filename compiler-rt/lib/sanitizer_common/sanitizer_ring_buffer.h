@@ -79,7 +79,6 @@ class RingBuffer {
 // A ring buffer with externally provided storage that encodes its state in 8
 // bytes. Has significant constraints on size and alignment of storage.
 // See a comment in hwasan/hwasan_thread_list.h for the motivation behind this.
-#if SANITIZER_WORDSIZE == 64
 template <class T>
 class CompactRingBuffer {
   // Top byte of long_ stores the buffer size in pages.
@@ -155,7 +154,6 @@ class CompactRingBuffer {
 
   uptr long_;
 };
-#endif
 }  // namespace __sanitizer
 
 #endif  // SANITIZER_RING_BUFFER_H

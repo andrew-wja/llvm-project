@@ -167,7 +167,7 @@ file(WRITE ${DUMMY_VERS} "{};")
 set(VERS_OPTION "-Wl,--version-script,${DUMMY_VERS}")
 if(COMPILER_RT_HAS_GNU_VERSION_SCRIPT_COMPAT)
   # Solaris 11.4 ld only supports --version-script with
-  # -z gnu-version-script-compat. 
+  # -z gnu-version-script-compat.
   string(APPEND VERS_OPTION " ${VERS_COMPAT_OPTION}")
 endif()
 check_linker_flag("${VERS_OPTION}" COMPILER_RT_HAS_VERSION_SCRIPT)
@@ -325,6 +325,7 @@ else()
   set(ALL_LSAN_SUPPORTED_ARCH ${X86} ${X86_64} ${MIPS64} ${ARM64} ${ARM32} ${PPC64} ${S390X})
 endif()
 set(ALL_MSAN_SUPPORTED_ARCH ${X86_64} ${MIPS64} ${ARM64} ${PPC64} ${S390X})
+set(ALL_DUMMYSAN_SUPPORTED_ARCH ${COMPILER_RT_SUPPORTED_ARCH})
 set(ALL_HWASAN_SUPPORTED_ARCH ${X86_64} ${ARM64})
 set(ALL_MEMPROF_SUPPORTED_ARCH ${X86_64})
 set(ALL_PROFILE_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64} ${PPC32} ${PPC64}
@@ -551,6 +552,9 @@ if(APPLE)
   list_intersect(MSAN_SUPPORTED_ARCH
     ALL_MSAN_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
+  list_intersect(DUMMYSAN_SUPPORTED_ARCH
+    ALL_DUMMYSAN_SUPPORTED_ARCH
+    SANITIZER_COMMON_SUPPORTED_ARCH)
   list_intersect(HWASAN_SUPPORTED_ARCH
     ALL_HWASAN_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
@@ -604,6 +608,7 @@ else()
   filter_available_targets(DFSAN_SUPPORTED_ARCH ${ALL_DFSAN_SUPPORTED_ARCH})
   filter_available_targets(LSAN_SUPPORTED_ARCH ${ALL_LSAN_SUPPORTED_ARCH})
   filter_available_targets(MSAN_SUPPORTED_ARCH ${ALL_MSAN_SUPPORTED_ARCH})
+  filter_available_targets(DUMMYSAN_SUPPORTED_ARCH ${ALL_DUMMYSAN_SUPPORTED_ARCH})
   filter_available_targets(HWASAN_SUPPORTED_ARCH ${ALL_HWASAN_SUPPORTED_ARCH})
   filter_available_targets(MEMPROF_SUPPORTED_ARCH ${ALL_MEMPROF_SUPPORTED_ARCH})
   filter_available_targets(PROFILE_SUPPORTED_ARCH ${ALL_PROFILE_SUPPORTED_ARCH})
@@ -640,7 +645,7 @@ if(COMPILER_RT_SUPPORTED_ARCH)
 endif()
 message(STATUS "Compiler-RT supported architectures: ${COMPILER_RT_SUPPORTED_ARCH}")
 
-set(ALL_SANITIZERS asan;dfsan;msan;hwasan;tsan;safestack;cfi;scudo;ubsan_minimal;gwp_asan)
+set(ALL_SANITIZERS asan;dfsan;msan;dummysan;hwasan;tsan;safestack;cfi;scudo;ubsan_minimal;gwp_asan)
 set(COMPILER_RT_SANITIZERS_TO_BUILD all CACHE STRING
     "sanitizers to build if supported on the target (all;${ALL_SANITIZERS})")
 list_replace(COMPILER_RT_SANITIZERS_TO_BUILD all "${ALL_SANITIZERS}")
@@ -699,6 +704,12 @@ if (COMPILER_RT_HAS_SANITIZER_COMMON AND MSAN_SUPPORTED_ARCH AND
   set(COMPILER_RT_HAS_MSAN TRUE)
 else()
   set(COMPILER_RT_HAS_MSAN FALSE)
+endif()
+
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND DUMMYSAN_SUPPORTED_ARCH)
+  set(COMPILER_RT_HAS_DUMMYSAN TRUE)
+else()
+  set(COMPILER_RT_HAS_DUMMYSAN FALSE)
 endif()
 
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND HWASAN_SUPPORTED_ARCH AND

@@ -1,0 +1,2 @@
+add_compiler_rt_script(dummysan_symbolize)
+add_dependencies(dummysan dummysan_symbolize)

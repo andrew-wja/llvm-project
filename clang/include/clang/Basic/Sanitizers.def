@@ -37,6 +37,9 @@
 #endif
 
 
+// DummySanitizer
+SANITIZER("dummy", Dummy)
+
 // AddressSanitizer
 SANITIZER("address", Address)
 

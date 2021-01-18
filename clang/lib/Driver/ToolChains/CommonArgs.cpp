@@ -802,6 +802,8 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
       SharedRuntimes.push_back("tsan");
     if (SanArgs.needsHwasanRt() && SanArgs.linkRuntimes())
       SharedRuntimes.push_back("hwasan");
+    if (SanArgs.needsDummysanRt() && SanArgs.linkRuntimes())
+      SharedRuntimes.push_back("dummysan");
   }
 
   // The stats_client library is also statically linked into DSOs.
@@ -834,6 +836,11 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
     StaticRuntimes.push_back("hwasan");
     if (SanArgs.linkCXXRuntimes())
       StaticRuntimes.push_back("hwasan_cxx");
+  }
+  if (!SanArgs.needsSharedRt() && SanArgs.needsDummysanRt() && SanArgs.linkRuntimes()) {
+    StaticRuntimes.push_back("dummysan");
+    if (SanArgs.linkCXXRuntimes())
+      StaticRuntimes.push_back("dummysan_cxx");
   }
   if (SanArgs.needsDfsanRt() && SanArgs.linkRuntimes())
     StaticRuntimes.push_back("dfsan");
