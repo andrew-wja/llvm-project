@@ -790,6 +790,8 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
   const SanitizerArgs &SanArgs = TC.getSanitizerArgs();
   // Collect shared runtimes.
   if (SanArgs.needsSharedRt()) {
+    if (SanArgs.needsSimplesanRt() && SanArgs.linkRuntimes())
+      SharedRuntimes.push_back("simplesan");
     if (SanArgs.needsAsanRt() && SanArgs.linkRuntimes()) {
       SharedRuntimes.push_back("asan");
       if (!Args.hasArg(options::OPT_shared) && !TC.getTriple().isAndroid())
@@ -830,6 +832,12 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
 
   // Each static runtime that has a DSO counterpart above is excluded below,
   // but runtimes that exist only as static are not affected by needsSharedRt.
+
+  if (!SanArgs.needsSharedRt() && SanArgs.needsSimplesanRt() && SanArgs.linkRuntimes()) {
+    StaticRuntimes.push_back("simplesan");
+    if (SanArgs.linkCXXRuntimes())
+      StaticRuntimes.push_back("simplesan_cxx");
+  }
 
   if (!SanArgs.needsSharedRt() && SanArgs.needsAsanRt() && SanArgs.linkRuntimes()) {
     StaticRuntimes.push_back("asan");

@@ -35,12 +35,12 @@ static const SanitizerMask NotAllowedWithTrap = SanitizerKind::Vptr;
 static const SanitizerMask NotAllowedWithMinimalRuntime =
     SanitizerKind::Function | SanitizerKind::Vptr;
 static const SanitizerMask RequiresPIE =
-    SanitizerKind::DataFlow | SanitizerKind::HWAddress | SanitizerKind::Scudo;
+    SanitizerKind::DataFlow | SanitizerKind::Simple | SanitizerKind::HWAddress | SanitizerKind::Scudo;
 static const SanitizerMask NeedsUnwindTables =
-    SanitizerKind::Address | SanitizerKind::HWAddress | SanitizerKind::Thread |
+    SanitizerKind::Address | SanitizerKind::Simple | SanitizerKind::HWAddress | SanitizerKind::Thread |
     SanitizerKind::Memory | SanitizerKind::DataFlow;
 static const SanitizerMask SupportsCoverage =
-    SanitizerKind::Address | SanitizerKind::HWAddress |
+    SanitizerKind::Address | SanitizerKind::Simple | SanitizerKind::HWAddress |
     SanitizerKind::KernelAddress | SanitizerKind::KernelHWAddress |
     SanitizerKind::MemTag | SanitizerKind::Memory |
     SanitizerKind::KernelMemory | SanitizerKind::Leak |
@@ -138,7 +138,8 @@ static void addDefaultBlacklists(const Driver &D, SanitizerMask Kinds,
   struct Blacklist {
     const char *File;
     SanitizerMask Mask;
-  } Blacklists[] = {{"asan_blacklist.txt", SanitizerKind::Address},
+  } Blacklists[] = {{"simplesan_blacklist.txt", SanitizerKind::Simple},
+                    {"asan_blacklist.txt", SanitizerKind::Address},
                     {"hwasan_blacklist.txt", SanitizerKind::HWAddress},
                     {"memtag_blacklist.txt", SanitizerKind::MemTag},
                     {"msan_blacklist.txt", SanitizerKind::Memory},

@@ -411,6 +411,9 @@ inline void Trap() {
 
 }  // namespace __sanitizer
 
+namespace __simplesan {
+using namespace __sanitizer;
+}
 namespace __asan {
 using namespace __sanitizer;
 }

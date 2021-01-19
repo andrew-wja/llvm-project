@@ -65,6 +65,9 @@ public:
   bool needsSharedRt() const { return SharedRuntime; }
 
   bool needsMemProfRt() const { return NeedsMemProfRt; }
+  bool needsSimplesanRt() const {
+    return Sanitizers.has(SanitizerKind::Simple);
+  }
   bool needsAsanRt() const { return Sanitizers.has(SanitizerKind::Address); }
   bool needsHwasanRt() const {
     return Sanitizers.has(SanitizerKind::HWAddress);

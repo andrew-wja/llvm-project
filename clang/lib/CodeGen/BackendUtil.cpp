@@ -64,6 +64,7 @@
 #include "llvm/Transforms/IPO/ThinLTOBitcodeWriter.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Instrumentation.h"
+#include "llvm/Transforms/Instrumentation/SimpleSanitizer.h"
 #include "llvm/Transforms/Instrumentation/AddressSanitizer.h"
 #include "llvm/Transforms/Instrumentation/BoundsChecking.h"
 #include "llvm/Transforms/Instrumentation/DataFlowSanitizer.h"
@@ -275,6 +276,15 @@ static void addMemProfilerPasses(const PassManagerBuilder &Builder,
                                  legacy::PassManagerBase &PM) {
   PM.add(createMemProfilerFunctionPass());
   PM.add(createModuleMemProfilerLegacyPassPass());
+}
+
+static void addSimpleSanitizerPasses(const PassManagerBuilder &Builder,
+                                            legacy::PassManagerBase &PM) {
+  const PassManagerBuilderWrapper &BuilderWrapper =
+      static_cast<const PassManagerBuilderWrapper &>(Builder);
+  const CodeGenOptions &CGOpts = BuilderWrapper.getCGOpts();
+  bool Recover = CGOpts.SanitizeRecover.has(SanitizerKind::Simple);
+  PM.add(createSimpleSanitizerLegacyPassPass(Recover));
 }
 
 static void addAddressSanitizerPasses(const PassManagerBuilder &Builder,
@@ -738,6 +748,13 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addSanitizerCoveragePass);
   }
 
+  if (LangOpts.Sanitize.has(SanitizerKind::Simple)) {
+    PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
+                           addSimpleSanitizerPasses);
+    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
+                           addSimpleSanitizerPasses);
+  }
+
   if (LangOpts.Sanitize.has(SanitizerKind::Address)) {
     PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
                            addAddressSanitizerPasses);
@@ -1133,6 +1150,10 @@ static void addSanitizers(const Triple &TargetTriple,
     if (LangOpts.Sanitize.has(SanitizerKind::Thread)) {
       MPM.addPass(ThreadSanitizerPass());
       MPM.addPass(createModuleToFunctionPassAdaptor(ThreadSanitizerPass()));
+    }
+
+    if (LangOpts.Sanitize.has(SanitizerKind::Simple)) {
+      MPM.addPass(SimpleSanitizerPass());
     }
 
     auto ASanPass = [&](SanitizerMask Mask, bool CompileKernel) {

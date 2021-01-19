@@ -37,6 +37,9 @@
 #endif
 
 
+// SimpleSanitizer
+SANITIZER("simple", Simple)
+
 // AddressSanitizer
 SANITIZER("address", Address)
 

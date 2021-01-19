@@ -403,6 +403,7 @@ void initializeShadowStackGCLoweringPass(PassRegistry&);
 void initializeShrinkWrapPass(PassRegistry&);
 void initializeSimpleInlinerPass(PassRegistry&);
 void initializeSimpleLoopUnswitchLegacyPassPass(PassRegistry&);
+void initializeSimpleSanitizerLegacyPassPass(PassRegistry &);
 void initializeSingleLoopExtractorPass(PassRegistry&);
 void initializeSinkingLegacyPassPass(PassRegistry&);
 void initializeSjLjEHPreparePass(PassRegistry&);
