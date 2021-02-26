@@ -65,6 +65,7 @@
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Instrumentation/AddressSanitizer.h"
+#include "llvm/Transforms/Instrumentation/GenericSanitizer.h"
 #include "llvm/Transforms/Instrumentation/BoundsChecking.h"
 #include "llvm/Transforms/Instrumentation/DataFlowSanitizer.h"
 #include "llvm/Transforms/Instrumentation/GCOVProfiler.h"
@@ -293,6 +294,11 @@ static void addAddressSanitizerPasses(const PassManagerBuilder &Builder,
   PM.add(createModuleAddressSanitizerLegacyPassPass(
       /*CompileKernel*/ false, Recover, UseGlobalsGC, UseOdrIndicator,
       DestructorKind));
+}
+
+static void addGenericSanitizerPasses(const PassManagerBuilder &Builder,
+                                      legacy::PassManagerBase &PM) {
+  PM.add(createGenericSanitizerLegacyPassPass());
 }
 
 static void addKernelAddressSanitizerPasses(const PassManagerBuilder &Builder,
@@ -745,6 +751,13 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addAddressSanitizerPasses);
   }
 
+  if (LangOpts.Sanitize.has(SanitizerKind::Generic)) {
+    PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
+                           addGenericSanitizerPasses);
+    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
+                           addGenericSanitizerPasses);
+  }
+
   if (LangOpts.Sanitize.has(SanitizerKind::KernelAddress)) {
     PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
                            addKernelAddressSanitizerPasses);
@@ -1133,6 +1146,10 @@ static void addSanitizers(const Triple &TargetTriple,
     if (LangOpts.Sanitize.has(SanitizerKind::Thread)) {
       MPM.addPass(ThreadSanitizerPass());
       MPM.addPass(createModuleToFunctionPassAdaptor(ThreadSanitizerPass()));
+    }
+
+    if (LangOpts.Sanitize.has(SanitizerKind::Generic)) {
+      MPM.addPass(GenericSanitizerPass());
     }
 
     auto ASanPass = [&](SanitizerMask Mask, bool CompileKernel) {

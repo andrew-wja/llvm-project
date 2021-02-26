@@ -795,6 +795,11 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
       if (!Args.hasArg(options::OPT_shared) && !TC.getTriple().isAndroid())
         HelperStaticRuntimes.push_back("asan-preinit");
     }
+    if (SanArgs.needsGsanRt() && SanArgs.linkRuntimes()) {
+      SharedRuntimes.push_back("gsan");
+      if (!Args.hasArg(options::OPT_shared) && !TC.getTriple().isAndroid())
+        HelperStaticRuntimes.push_back("gsan-preinit");
+    }
     if (SanArgs.needsMemProfRt() && SanArgs.linkRuntimes()) {
       SharedRuntimes.push_back("memprof");
       if (!Args.hasArg(options::OPT_shared) && !TC.getTriple().isAndroid())
@@ -835,6 +840,10 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
     StaticRuntimes.push_back("asan");
     if (SanArgs.linkCXXRuntimes())
       StaticRuntimes.push_back("asan_cxx");
+  }
+
+  if (!SanArgs.needsSharedRt() && SanArgs.needsGsanRt() && SanArgs.linkRuntimes()) {
+    StaticRuntimes.push_back("gsan");
   }
 
   if (!SanArgs.needsSharedRt() && SanArgs.needsMemProfRt() &&

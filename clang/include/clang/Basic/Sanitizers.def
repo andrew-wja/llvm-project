@@ -76,6 +76,9 @@ SANITIZER("thread", Thread)
 // LeakSanitizer
 SANITIZER("leak", Leak)
 
+// LeakSanitizer
+SANITIZER("generic", Generic)
+
 // UndefinedBehaviorSanitizer
 SANITIZER("alignment", Alignment)
 SANITIZER("array-bounds", ArrayBounds)

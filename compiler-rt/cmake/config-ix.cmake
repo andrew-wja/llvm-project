@@ -167,7 +167,7 @@ file(WRITE ${DUMMY_VERS} "{};")
 set(VERS_OPTION "-Wl,--version-script,${DUMMY_VERS}")
 if(COMPILER_RT_HAS_GNU_VERSION_SCRIPT_COMPAT)
   # Solaris 11.4 ld only supports --version-script with
-  # -z gnu-version-script-compat. 
+  # -z gnu-version-script-compat.
   string(APPEND VERS_OPTION " ${VERS_COMPAT_OPTION}")
 endif()
 check_linker_flag("${VERS_OPTION}" COMPILER_RT_HAS_VERSION_SCRIPT)
@@ -323,6 +323,11 @@ if(APPLE)
   set(ALL_LSAN_SUPPORTED_ARCH ${X86} ${X86_64} ${MIPS64} ${ARM64})
 else()
   set(ALL_LSAN_SUPPORTED_ARCH ${X86} ${X86_64} ${MIPS64} ${ARM64} ${ARM32} ${PPC64} ${S390X} ${RISCV64})
+endif()
+if(APPLE)
+  set(ALL_GSAN_SUPPORTED_ARCH ${X86} ${X86_64} ${MIPS64} ${ARM64})
+else()
+  set(ALL_GSAN_SUPPORTED_ARCH ${X86} ${X86_64} ${MIPS64} ${ARM64} ${ARM32} ${PPC64} ${S390X} ${RISCV64})
 endif()
 set(ALL_MSAN_SUPPORTED_ARCH ${X86_64} ${MIPS64} ${ARM64} ${PPC64} ${S390X})
 set(ALL_HWASAN_SUPPORTED_ARCH ${X86_64} ${ARM64})
@@ -534,10 +539,14 @@ if(APPLE)
     ALL_SANITIZER_COMMON_SUPPORTED_ARCH
     COMPILER_RT_SUPPORTED_ARCH
     )
+  set(GSAN_COMMON_SUPPORTED_ARCH ${SANITIZER_COMMON_SUPPORTED_ARCH})
   set(LSAN_COMMON_SUPPORTED_ARCH ${SANITIZER_COMMON_SUPPORTED_ARCH})
   set(UBSAN_COMMON_SUPPORTED_ARCH ${SANITIZER_COMMON_SUPPORTED_ARCH})
   list_intersect(ASAN_SUPPORTED_ARCH
     ALL_ASAN_SUPPORTED_ARCH
+    SANITIZER_COMMON_SUPPORTED_ARCH)
+  list_intersect(GSAN_SUPPORTED_ARCH
+    ALL_GSAN_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
   list_intersect(DFSAN_SUPPORTED_ARCH
     ALL_DFSAN_SUPPORTED_ARCH
@@ -595,11 +604,14 @@ else()
     ${ALL_SANITIZER_COMMON_SUPPORTED_ARCH})
   # LSan and UBSan common files should be available on all architectures
   # supported by other sanitizers (even if they build into dummy object files).
+  filter_available_targets(GSAN_COMMON_SUPPORTED_ARCH
+    ${SANITIZER_COMMON_SUPPORTED_ARCH})
   filter_available_targets(LSAN_COMMON_SUPPORTED_ARCH
     ${SANITIZER_COMMON_SUPPORTED_ARCH})
   filter_available_targets(UBSAN_COMMON_SUPPORTED_ARCH
     ${SANITIZER_COMMON_SUPPORTED_ARCH})
   filter_available_targets(ASAN_SUPPORTED_ARCH ${ALL_ASAN_SUPPORTED_ARCH})
+  filter_available_targets(GSAN_SUPPORTED_ARCH ${ALL_GSAN_SUPPORTED_ARCH})
   filter_available_targets(FUZZER_SUPPORTED_ARCH ${ALL_FUZZER_SUPPORTED_ARCH})
   filter_available_targets(DFSAN_SUPPORTED_ARCH ${ALL_DFSAN_SUPPORTED_ARCH})
   filter_available_targets(LSAN_SUPPORTED_ARCH ${ALL_LSAN_SUPPORTED_ARCH})
@@ -640,7 +652,7 @@ if(COMPILER_RT_SUPPORTED_ARCH)
 endif()
 message(STATUS "Compiler-RT supported architectures: ${COMPILER_RT_SUPPORTED_ARCH}")
 
-set(ALL_SANITIZERS asan;dfsan;msan;hwasan;tsan;safestack;cfi;scudo;ubsan_minimal;gwp_asan)
+set(ALL_SANITIZERS asan;gsan;dfsan;msan;hwasan;tsan;safestack;cfi;scudo;ubsan_minimal;gwp_asan)
 set(COMPILER_RT_SANITIZERS_TO_BUILD all CACHE STRING
     "sanitizers to build if supported on the target (all;${ALL_SANITIZERS})")
 list_replace(COMPILER_RT_SANITIZERS_TO_BUILD all "${ALL_SANITIZERS}")
@@ -670,6 +682,12 @@ if (OS_NAME MATCHES "Linux|FreeBSD|Windows|NetBSD|SunOS")
   set(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME TRUE)
 else()
   set(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME FALSE)
+endif()
+
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND GSAN_SUPPORTED_ARCH)
+  set(COMPILER_RT_HAS_GSAN TRUE)
+else()
+  set(COMPILER_RT_HAS_GSAN FALSE)
 endif()
 
 # TODO: Add builtins support.

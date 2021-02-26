@@ -37,10 +37,10 @@ static const SanitizerMask NotAllowedWithMinimalRuntime =
 static const SanitizerMask RequiresPIE =
     SanitizerKind::DataFlow | SanitizerKind::HWAddress | SanitizerKind::Scudo;
 static const SanitizerMask NeedsUnwindTables =
-    SanitizerKind::Address | SanitizerKind::HWAddress | SanitizerKind::Thread |
-    SanitizerKind::Memory | SanitizerKind::DataFlow;
+    SanitizerKind::Address | SanitizerKind::Generic | SanitizerKind::HWAddress |
+    SanitizerKind::Thread | SanitizerKind::Memory | SanitizerKind::DataFlow;
 static const SanitizerMask SupportsCoverage =
-    SanitizerKind::Address | SanitizerKind::HWAddress |
+    SanitizerKind::Address | SanitizerKind::Generic | SanitizerKind::HWAddress |
     SanitizerKind::KernelAddress | SanitizerKind::KernelHWAddress |
     SanitizerKind::MemTag | SanitizerKind::Memory |
     SanitizerKind::KernelMemory | SanitizerKind::Leak |
@@ -139,6 +139,7 @@ static void addDefaultBlacklists(const Driver &D, SanitizerMask Kinds,
     const char *File;
     SanitizerMask Mask;
   } Blacklists[] = {{"asan_blacklist.txt", SanitizerKind::Address},
+                    {"gsan_blacklist.txt", SanitizerKind::Generic},
                     {"hwasan_blacklist.txt", SanitizerKind::HWAddress},
                     {"memtag_blacklist.txt", SanitizerKind::MemTag},
                     {"msan_blacklist.txt", SanitizerKind::Memory},

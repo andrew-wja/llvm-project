@@ -414,6 +414,9 @@ inline void Trap() {
 namespace __asan {
 using namespace __sanitizer;
 }
+namespace __gsan {
+using namespace __sanitizer;
+}
 namespace __dsan {
 using namespace __sanitizer;
 }
