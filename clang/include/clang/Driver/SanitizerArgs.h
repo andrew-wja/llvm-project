@@ -76,6 +76,9 @@ public:
            !Sanitizers.has(SanitizerKind::Address) &&
            !Sanitizers.has(SanitizerKind::HWAddress);
   }
+  bool needsGsanRt() const {
+    return Sanitizers.has(SanitizerKind::Generic);
+  }
   bool needsFuzzerInterceptors() const;
   bool needsUbsanRt() const;
   bool requiresMinimalRuntime() const { return MinimalRuntime; }

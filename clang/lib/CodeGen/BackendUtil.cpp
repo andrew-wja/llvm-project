@@ -65,6 +65,7 @@
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Instrumentation/AddressSanitizer.h"
+#include "llvm/Transforms/Instrumentation/GenericSanitizer.h"
 #include "llvm/Transforms/Instrumentation/BoundsChecking.h"
 #include "llvm/Transforms/Instrumentation/DataFlowSanitizer.h"
 #include "llvm/Transforms/Instrumentation/GCOVProfiler.h"
@@ -290,6 +291,11 @@ static void addAddressSanitizerPasses(const PassManagerBuilder &Builder,
                                             UseAfterScope));
   PM.add(createModuleAddressSanitizerLegacyPassPass(
       /*CompileKernel*/ false, Recover, UseGlobalsGC, UseOdrIndicator));
+}
+
+static void addGenericSanitizerPasses(const PassManagerBuilder &Builder,
+                                      legacy::PassManagerBase &PM) {
+  PM.add(createGenericSanitizerLegacyPassPass());
 }
 
 static void addKernelAddressSanitizerPasses(const PassManagerBuilder &Builder,
@@ -730,6 +736,13 @@ void EmitAssemblyHelper::CreatePasses(legacy::PassManager &MPM,
                            addAddressSanitizerPasses);
     PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
                            addAddressSanitizerPasses);
+  }
+
+  if (LangOpts.Sanitize.has(SanitizerKind::Generic)) {
+    PMBuilder.addExtension(PassManagerBuilder::EP_OptimizerLast,
+                           addGenericSanitizerPasses);
+    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
+                           addGenericSanitizerPasses);
   }
 
   if (LangOpts.Sanitize.has(SanitizerKind::KernelAddress)) {
