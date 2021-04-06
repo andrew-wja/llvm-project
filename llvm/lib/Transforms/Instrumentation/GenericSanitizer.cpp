@@ -3410,7 +3410,7 @@ void SoftBoundCETSImpl::emitInstrumentationPhase1 (Function * func) {
         {
           ExtractElementInst * EEI = dyn_cast<ExtractElementInst>(v1);
           SOFTBOUNDCETS_ASSERT(EEI && "ExtractElementInst inst?");
-          handleExtractElement(EEI);
+          //~ handleExtractElement(EEI);
         }
         break;
 
