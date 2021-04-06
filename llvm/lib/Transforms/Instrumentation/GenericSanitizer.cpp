@@ -3077,7 +3077,7 @@ void SoftBoundCETSImpl::handleExtractElement(ExtractElementInst* EEI){
       SOFTBOUNDCETS_ASSERT(0 && "Extract element does not have vector metadata");
     }
 
-    Constant* index = dyn_cast<Constant>(EEI->getOperand(1));
+    Constant* index = dyn_cast<Constant>(EEI->getIndexOperand());
 
     Value* vector_base = m_vector_pointer_base[EEIOperand];
     Value* vector_bound = m_vector_pointer_bound[EEIOperand];
