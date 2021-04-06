@@ -1055,8 +1055,8 @@ void
 SoftBoundCETSImpl::emitShadowStackInitialization(Value* ptr_value,
                                                  Instruction* insert_at,
                                                  int arg_no){
-  SOFTBOUNDCETS_ASSERT(ptr_value && "emitShadowStackInitialization: ptr_value null?")
-  SOFTBOUNDCETS_ASSERT(insert_at && "emitShadowStackInitialization: insert_at null?")
+  SOFTBOUNDCETS_ASSERT(ptr_value && "emitShadowStackInitialization: ptr_value null?");
+  SOFTBOUNDCETS_ASSERT(insert_at && "emitShadowStackInitialization: insert_at null?");
 
   if (!isa<PointerType>(ptr_value->getType()))
     return;
