@@ -1288,14 +1288,19 @@ void SoftBoundCETSImpl::handleSelect(SelectInst* select_ins, int pass) {
   if (!isa<PointerType>(select_ins->getType()))
     return;
 
-  Value* condition = select_ins->getOperand(0);
+  Value* condition = select_ins->getCondition();
   Value* operand_base[2];
   Value* operand_bound[2];
   Value* operand_key[2];
   Value* operand_lock[2];
 
   for(unsigned m = 0; m < 2; m++) {
-    Value* operand = select_ins->getOperand(m+1);
+    Value* operand;
+    if (m == 0 ) {
+      operand = select_ins->getTrueValue();
+    } else {
+      operand = select_ins->getFalseValue();
+    }
 
     operand_base[m] = NULL;
     operand_bound[m] = NULL;
@@ -2855,8 +2860,8 @@ void SoftBoundCETSImpl::handlePHIPass2(PHINode* phi_node) {
 
 void SoftBoundCETSImpl::handleVectorStore(StoreInst* store_inst){
 
-  Value* operand = store_inst->getOperand(0);
-  Value* pointer_dest = store_inst->getOperand(1);
+  Value* operand = store_inst->getValueOperand();
+  Value* pointer_dest = store_inst->getPointerOperand();
   Instruction* insert_at = util::getNextInstruction(store_inst);
 
   if (!m_vector_pointer_base.count(operand)){
@@ -2910,8 +2915,8 @@ void SoftBoundCETSImpl::handleVectorStore(StoreInst* store_inst){
 
 void SoftBoundCETSImpl::handleStore(StoreInst* store_inst) {
 
-  Value* operand = store_inst->getOperand(0);
-  Value* pointer_dest = store_inst->getOperand(1);
+  Value* operand = store_inst->getValueOperand();
+  Value* pointer_dest = store_inst->getPointerOperand();
   Instruction* insert_at = util::getNextInstruction(store_inst);
 
   /*
