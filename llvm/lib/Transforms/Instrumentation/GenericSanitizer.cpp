@@ -3082,17 +3082,28 @@ void SoftBoundCETSImpl::handleExtractElement(ExtractElementInst* EEI){
       SOFTBOUNDCETS_ASSERT(0 && "Extract element does not have vector metadata");
     }
 
-    Constant* index = dyn_cast<Constant>(EEI->getIndexOperand());
+    if (!m_vector_pointer_base.count(EEIOperand)){
+      SOFTBOUNDCETS_ASSERT(0 && "vector base not found");
+    }
+    if (!m_vector_pointer_bound.count(EEIOperand)){
+      SOFTBOUNDCETS_ASSERT(0 && "vector bound not found");
+    }
+    if (!m_vector_pointer_key.count(EEIOperand)){
+      SOFTBOUNDCETS_ASSERT(0 && "vector key not found");
+    }
+    if (!m_vector_pointer_lock.count(EEIOperand)){
+      SOFTBOUNDCETS_ASSERT(0 && "vector lock not found");
+    }
 
     Value* vector_base = m_vector_pointer_base[EEIOperand];
     Value* vector_bound = m_vector_pointer_bound[EEIOperand];
     Value* vector_key = m_vector_pointer_key[EEIOperand];
     Value* vector_lock = m_vector_pointer_lock[EEIOperand];
 
-    Value* ptr_base = ExtractElementInst::Create(vector_base, index, "", EEI);
-    Value* ptr_bound = ExtractElementInst::Create(vector_bound, index, "", EEI);
-    Value* ptr_key = ExtractElementInst::Create(vector_key, index, "", EEI);
-    Value* ptr_lock = ExtractElementInst::Create(vector_lock, index, "", EEI);
+    Value* ptr_base = ExtractElementInst::Create(vector_base, EEI->getIndexOperand(), "", EEI);
+    Value* ptr_bound = ExtractElementInst::Create(vector_bound, EEI->getIndexOperand(), "", EEI);
+    Value* ptr_key = ExtractElementInst::Create(vector_key, EEI->getIndexOperand(), "", EEI);
+    Value* ptr_lock = ExtractElementInst::Create(vector_lock, EEI->getIndexOperand(), "", EEI);
 
     associateBaseBound(EEI, ptr_base, ptr_bound);
     associateKeyLock(EEI, ptr_key, ptr_lock);
