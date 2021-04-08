@@ -1327,7 +1327,7 @@ void SoftBoundCETSImpl::associateBaseBound(Value* pointer_operand,
 // pointer bitcast operations.
 
 void SoftBoundCETSImpl::handleBitCast(BitCastInst* bitcast_inst) {
-  Value* pointer_operand = bitcast_inst->getPointerOperand();
+  Value* pointer_operand = bitcast_inst->getOperand(0);
   propagateMetadata(pointer_operand, bitcast_inst, SBCETS_BITCAST);
 }
 
@@ -2150,7 +2150,8 @@ SoftBoundCETSImpl::emitLoadStoreChecks(Instruction* load_store,
           continue;
 
         if (isa<StoreInst>(temp_inst)){
-          if (temp_inst->getPointerOperand() != pointer_operand){
+          StoreInst* sti = dyn_cast<StoreInst>(temp_inst);
+          if (sti->getPointerOperand() != pointer_operand){
             // When a pointer is a being stored at at a particular
             // address, don't elide the check
             continue;
@@ -2212,7 +2213,14 @@ bool
 SoftBoundCETSImpl::
 optimizeGlobalAndStackVariableChecks(Instruction* load_store) {
 
-  Value* pointer_operand = load_store->getPointerOperand();
+  Value* pointer_operand;
+  if (isa<LoadInst>(load_store)) {
+    LoadInst* ldi = dyn_cast<LoadInst>(load_store);
+    pointer_operand = ldi->getPointerOperand();
+  } else {
+    StoreInst* sti = dyn_cast<StoreInst>(load_store);
+    pointer_operand = sti->getPointerOperand();
+  }
 
   while (true) {
     if (isa<AllocaInst>(pointer_operand)){
@@ -2225,7 +2233,7 @@ optimizeGlobalAndStackVariableChecks(Instruction* load_store) {
 
     if (isa<BitCastInst>(pointer_operand)){
       BitCastInst* bitcast_inst = dyn_cast<BitCastInst>(pointer_operand);
-      pointer_operand = bitcast_inst->getPointerOperand();
+      pointer_operand = bitcast_inst->getOperand(0);
       continue;
     }
 
@@ -2304,7 +2312,15 @@ SoftBoundCETSImpl::bbTemporalCheckElimination(Instruction* load_store,
 Value*
 SoftBoundCETSImpl::getPointerLoadStore(Instruction* load_store) {
 
-  Value* pointer_operand  = load_store->getPointerOperand();
+  Value* pointer_operand;
+  if (isa<LoadInst>(load_store)) {
+    LoadInst* ldi = dyn_cast<LoadInst>(load_store);
+    pointer_operand = ldi->getPointerOperand();
+  } else {
+    StoreInst* sti = dyn_cast<StoreInst>(load_store);
+    pointer_operand = sti->getPointerOperand();
+  }
+
   SOFTBOUNDCETS_ASSERT((pointer_operand != NULL) && "pointer_operand null");
   return pointer_operand;
 }
@@ -2329,7 +2345,15 @@ SoftBoundCETSImpl::checkLoadStoreSourceIsGEP(Instruction* load_store,
   if (!isa<LoadInst>(load_store) && !isa<StoreInst>(load_store))
     return false;
 
-  Value* pointer_operand = load_store->getPointerOperand();
+  Value* pointer_operand;
+  if (isa<LoadInst>(load_store)) {
+    LoadInst* ldi = dyn_cast<LoadInst>(load_store);
+    pointer_operand = ldi->getPointerOperand();
+  } else {
+    StoreInst* sti = dyn_cast<StoreInst>(load_store);
+    pointer_operand = sti->getPointerOperand();
+  }
+
   SOFTBOUNDCETS_ASSERT(pointer_operand && "pointer_operand null?");
 
   if (!isa<GetElementPtrInst>(pointer_operand))
