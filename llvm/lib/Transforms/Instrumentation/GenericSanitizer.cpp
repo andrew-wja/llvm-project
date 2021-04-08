@@ -1153,7 +1153,7 @@ void SoftBoundCETSImpl::emitShadowStackInitialization(CallInst* call_inst) {
   if (pointer_args_return == 0)
     return;
 
-  int pointer_arg_no = 0;
+  int pointer_arg_no = 1; //why 1?
 
   for(Value* arg_value : call_inst->args()){
     if (arg_value) {
