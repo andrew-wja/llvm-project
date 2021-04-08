@@ -138,6 +138,37 @@ Value* castToVoidPtr(Value* operand, Instruction* insert_at) {
 }
 
 //
+// Method: castToSizeTPtr()
+//
+// Description:
+//
+// This function introduces a bitcast instruction in the IR when an
+// input operand that is a pointer type is not of type i8*. This is
+// required as all the SoftBound/CETS handlers take i8*s
+//
+
+Value* castToSizeTPtr(Value* operand, Instruction* insert_at) {
+
+  int LongSize = insert_at->getParent()->getParent()->getParent()->getDataLayout().getPointerSizeInBits();
+
+  Type* vptrty;
+
+  if (LongSize  == 64) {
+    vptrty = PointerType::getUnqual(Type::getInt64Ty(insert_at->getContext()));
+  } else {
+    vptrty = PointerType::getUnqual(Type::getInt32Ty(insert_at->getContext()));
+  }
+
+  Value* cast_bitcast = operand;
+  if (operand->getType() != vptrty) {
+    cast_bitcast = new BitCastInst(operand, vptrty,
+                                   "bitcast",
+                                   insert_at);
+  }
+  return cast_bitcast;
+}
+
+//
 // Method: getSizeOfType
 //
 // Description: This function returns the size of the memory access
@@ -907,17 +938,28 @@ void SoftBoundCETSImpl::emitStoreBaseBound(Value* pointer_dest,
                                            Value* size_of_type,
                                            Instruction* insert_at) {
 
+  SOFTBOUNDCETS_ASSERT(pointer_dest && "emitStoreBaseBound called with null pointer_dest");
+  SOFTBOUNDCETS_ASSERT(pointer_base && "emitStoreBaseBound called with null pointer_base");
+  SOFTBOUNDCETS_ASSERT(pointer_bound && "emitStoreBaseBound called with null pointer_bound");
+  SOFTBOUNDCETS_ASSERT(pointer_key && "emitStoreBaseBound called with null pointer_key");
+  SOFTBOUNDCETS_ASSERT(pointer_lock && "emitStoreBaseBound called with null pointer_lock");
+  SOFTBOUNDCETS_ASSERT(pointer && "emitStoreBaseBound called with null pointer");
+  SOFTBOUNDCETS_ASSERT(size_of_type && "emitStoreBaseBound called with null size_of_type");
+  SOFTBOUNDCETS_ASSERT(insert_at && "emitStoreBaseBound called with null insert_at");
+
   Value* pointer_base_cast = util::castToVoidPtr(pointer_base, insert_at);
   Value* pointer_bound_cast = util::castToVoidPtr(pointer_bound, insert_at);
   Value* pointer_dest_cast = util::castToVoidPtr(pointer_dest, insert_at);
+  Value* pointer_key_cast = util::castToSizeTPtr(pointer_key, insert_at);
+  Value* pointer_lock_cast = util::castToVoidPtr(pointer_lock, insert_at);
 
   SmallVector<Value*, 8> args;
 
   args.push_back(pointer_dest_cast);
   args.push_back(pointer_base_cast);
   args.push_back(pointer_bound_cast);
-  args.push_back(pointer_key);
-  args.push_back(pointer_lock);
+  args.push_back(pointer_key_cast);
+  args.push_back(pointer_lock_cast);
 
   CallInst::Create(m_store_base_bound_func, args, "", insert_at);
 }
@@ -1069,6 +1111,9 @@ SoftBoundCETSImpl::emitShadowStackInitialization(Value* ptr_value,
   Value* ptr_base = getAssociatedBase(ptr_value);
   Value* ptr_bound = getAssociatedBound(ptr_value);
 
+  SOFTBOUNDCETS_ASSERT(ptr_base && "Failed to look up base for pointer");
+  SOFTBOUNDCETS_ASSERT(ptr_bound && "Failed to look up bound for pointer");
+
   Value* ptr_base_cast = util::castToVoidPtr(ptr_base, insert_at);
   Value* ptr_bound_cast = util::castToVoidPtr(ptr_bound, insert_at);
 
@@ -1085,6 +1130,10 @@ SoftBoundCETSImpl::emitShadowStackInitialization(Value* ptr_value,
   Value* ptr_key = getAssociatedKey(ptr_value);
   Value* func_lock = getAssociatedFuncLock(insert_at);
   Value* ptr_lock = getAssociatedLock(ptr_value, func_lock);
+
+  SOFTBOUNDCETS_ASSERT(ptr_key && "Failed to look up key for pointer");
+  SOFTBOUNDCETS_ASSERT(func_lock && "Failed to look up lock for function");
+  SOFTBOUNDCETS_ASSERT(ptr_lock && "Failed to look up lock for pointer");
 
   args.clear();
   args.push_back(ptr_key);
