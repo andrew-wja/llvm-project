@@ -2086,7 +2086,6 @@ void SoftBoundCETSImpl::addMemcopyMemsetCheck(CallInst* call_inst,
 void
 SoftBoundCETSImpl::emitLoadStoreChecks(Instruction* load_store,
                                       std::map<Value*, int>& FDCE_map) {
-  SmallVector<Value*, 8> args;
   Value* pointer_operand = NULL;
 
   if (isa<LoadInst>(load_store)) {
@@ -2111,70 +2110,21 @@ SoftBoundCETSImpl::emitLoadStoreChecks(Instruction* load_store,
 
   SOFTBOUNDCETS_ASSERT(pointer_operand && "pointer operand null?");
 
-  if (!false){
-    // If it is a null pointer which is being loaded, then it must seg
-    // fault, no dereference check here
-    if (isa<ConstantPointerNull>(pointer_operand))
-      return;
-
-    // Find all uses of pointer operand, then check if it dominates and
-    //if so, make a note in the map
-
-    GlobalVariable* gv = dyn_cast<GlobalVariable>(pointer_operand);
-    if (gv && false && !(isa<ArrayType>(gv->getType()) || isa<PointerType>(gv->getType()))) {
-      return;
-    }
-
-    if (true) {
-      // Enable dominator based dereference check optimization only when
-      // suggested
-
-      if (FDCE_map.count(load_store)) {
-        return;
-      }
-
-      // FIXME: Add more comments here Iterate over the uses
-
-      for(Value::use_iterator ui = pointer_operand->use_begin(),
-            ue = pointer_operand->use_end();
-          ui != ue; ++ui) {
-
-        Instruction* temp_inst = dyn_cast<Instruction>(*ui);
-        if (!temp_inst)
-          continue;
-
-        if (temp_inst == load_store)
-          continue;
-
-        if (!isa<LoadInst>(temp_inst) && !isa<StoreInst>(temp_inst))
-          continue;
-
-        if (isa<StoreInst>(temp_inst)){
-          StoreInst* sti = dyn_cast<StoreInst>(temp_inst);
-          if (sti->getPointerOperand() != pointer_operand){
-            // When a pointer is a being stored at at a particular
-            // address, don't elide the check
-            continue;
-          }
-        }
-      } // Iterating over uses ends
-    } // true ends
-  }
+  if (isa<ConstantPointerNull>(pointer_operand))
+    return;
 
   Value* tmp_base = NULL;
   Value* tmp_bound = NULL;
 
   Constant* given_constant = dyn_cast<Constant>(pointer_operand);
   if (given_constant ) {
-    if (false)
-      return;
-
     getConstantExprBaseBound(given_constant, tmp_base, tmp_bound);
-  }
-  else {
+  } else {
     tmp_base = getAssociatedBase(pointer_operand);
     tmp_bound = getAssociatedBound(pointer_operand);
   }
+
+  SmallVector<Value*, 8> args;
 
   Value* bitcast_base = util::castToVoidPtr(tmp_base, load_store);
   args.push_back(bitcast_base);
@@ -2192,10 +2142,8 @@ SoftBoundCETSImpl::emitLoadStoreChecks(Instruction* load_store,
   args.push_back(size_of_type);
 
   if (isa<LoadInst>(load_store)){
-
     CallInst::Create(m_spatial_load_dereference_check, args, "", load_store);
-  }
-  else{
+  } else {
     CallInst::Create(m_spatial_store_dereference_check, args, "", load_store);
   }
 
