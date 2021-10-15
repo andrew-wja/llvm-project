@@ -299,12 +299,11 @@ public:
   bool instrumentMemAccess(InterestingMemoryOperand &O);
   bool isUninterestingHeapPointer(
     const Value *Ptr,
-    llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI);
-  bool ignoreAccess(Instruction *Inst, Value *Ptr,
-                    llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI);
+    llvm::function_ref<const TargetLibraryInfo &()> GetTLI);
+  bool ignoreAccess(Instruction *Inst, Value *Ptr);
   void getInterestingMemoryOperands(
       Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting,
-      llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI);
+      llvm::function_ref<const TargetLibraryInfo &()> GetTLI);
 
   bool isInterestingAlloca(const AllocaInst &AI);
   void tagAlloca(IRBuilder<> &IRB, AllocaInst *AI, Value *Tag, size_t Size);
@@ -804,7 +803,7 @@ Value *HWAddressSanitizer::getShadowNonTls(IRBuilder<> &IRB) {
 
 bool HWAddressSanitizer::isUninterestingHeapPointer(
   const Value *Ptr, 
-  llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
+  llvm::function_ref<const TargetLibraryInfo &()> GetTLI) {
   
   // An uninteresting heap pointer is one that we can statically determine
   // (a) can't point out of bounds, and (b) points to a live allocation.
@@ -815,9 +814,7 @@ bool HWAddressSanitizer::isUninterestingHeapPointer(
   return false;
 }
 
-bool HWAddressSanitizer::ignoreAccess(
-  Instruction *Inst, Value *Ptr,
-  llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
+bool HWAddressSanitizer::ignoreAccess(Instruction *Inst, Value *Ptr) {
   // Do not instrument acesses from different address spaces; we cannot deal
   // with them.
   Type *PtrTy = cast<PointerType>(Ptr->getType()->getScalarType());
@@ -837,17 +834,12 @@ bool HWAddressSanitizer::ignoreAccess(
     if (SSI && SSI->stackAccessIsSafe(*Inst))
       return true;
   }
-
-  if (isUninterestingHeapPointer(Ptr, GetTLI)) {
-    return true;
-  }
-
   return false;
 }
 
 void HWAddressSanitizer::getInterestingMemoryOperands(
     Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting,
-    llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
+    llvm::function_ref<const TargetLibraryInfo &()> GetTLI) {
   // Skip memory accesses inserted by another instrumentation.
   if (I->hasMetadata("nosanitize"))
     return;
@@ -857,29 +849,34 @@ void HWAddressSanitizer::getInterestingMemoryOperands(
     return;
 
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
-    if (!ClInstrumentReads || ignoreAccess(I, LI->getPointerOperand(), GetTLI))
+    if (!ClInstrumentReads || ignoreAccess(I, LI->getPointerOperand()) ||
+        isUninterestingHeapPointer(LI->getPointerOperand(), GetTLI))
       return;
     Interesting.emplace_back(I, LI->getPointerOperandIndex(), false,
                              LI->getType(), LI->getAlign());
   } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-    if (!ClInstrumentWrites || ignoreAccess(I, SI->getPointerOperand(), GetTLI))
+    if (!ClInstrumentWrites || ignoreAccess(I, SI->getPointerOperand()) ||
+        isUninterestingHeapPointer(SI->getPointerOperand(), GetTLI))
       return;
     Interesting.emplace_back(I, SI->getPointerOperandIndex(), true,
                              SI->getValueOperand()->getType(), SI->getAlign());
   } else if (AtomicRMWInst *RMW = dyn_cast<AtomicRMWInst>(I)) {
-    if (!ClInstrumentAtomics || ignoreAccess(I, RMW->getPointerOperand(), GetTLI))
+    if (!ClInstrumentAtomics || ignoreAccess(I, RMW->getPointerOperand()) ||
+        isUninterestingHeapPointer(RMW->getPointerOperand(), GetTLI))
       return;
     Interesting.emplace_back(I, RMW->getPointerOperandIndex(), true,
                              RMW->getValOperand()->getType(), None);
   } else if (AtomicCmpXchgInst *XCHG = dyn_cast<AtomicCmpXchgInst>(I)) {
-    if (!ClInstrumentAtomics || ignoreAccess(I, XCHG->getPointerOperand(), GetTLI))
+    if (!ClInstrumentAtomics || ignoreAccess(I, XCHG->getPointerOperand()) ||
+        isUninterestingHeapPointer(XCHG->getPointerOperand(), GetTLI))
       return;
     Interesting.emplace_back(I, XCHG->getPointerOperandIndex(), true,
                              XCHG->getCompareOperand()->getType(), None);
-  } else if (auto CI = dyn_cast<CallInst>(I)) {
+  } else if (auto *CI = dyn_cast<CallInst>(I)) {
     for (unsigned ArgNo = 0; ArgNo < CI->arg_size(); ArgNo++) {
       if (!ClInstrumentByval || !CI->isByValArgument(ArgNo) ||
-          ignoreAccess(I, CI->getArgOperand(ArgNo), GetTLI))
+          ignoreAccess(I, CI->getArgOperand(ArgNo)) ||
+          isUninterestingHeapPointer(CI->getArgOperand(ArgNo), GetTLI))
         continue;
       Type *Ty = CI->getParamByValType(ArgNo);
       Interesting.emplace_back(I, ArgNo, false, Ty, Align(1));
