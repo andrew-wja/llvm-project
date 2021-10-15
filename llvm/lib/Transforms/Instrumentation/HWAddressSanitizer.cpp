@@ -18,8 +18,11 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/PostDominators.h"
+#include "llvm/Analysis/PtrUseVisitor.h"
 #include "llvm/Analysis/StackSafetyAnalysis.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/IR/Attributes.h"
@@ -269,7 +272,8 @@ public:
       const MapVector<AllocaInst *, AllocaInfo> &AllocasToInstrument);
   bool sanitizeFunction(Function &F,
                         llvm::function_ref<const DominatorTree &()> GetDT,
-                        llvm::function_ref<const PostDominatorTree &()> GetPDT);
+                        llvm::function_ref<const PostDominatorTree &()> GetPDT,
+                        llvm::function_ref<const TargetLibraryInfo &()> GetTLI);
   void initializeModule();
   void createHwasanCtorComdat();
 
@@ -293,9 +297,14 @@ public:
   bool ignoreMemIntrinsic(MemIntrinsic *MI);
   void instrumentMemIntrinsic(MemIntrinsic *MI);
   bool instrumentMemAccess(InterestingMemoryOperand &O);
-  bool ignoreAccess(Instruction *Inst, Value *Ptr);
+  bool isUninterestingHeapPointer(
+    const Value *Ptr,
+    llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI);
+  bool ignoreAccess(Instruction *Inst, Value *Ptr,
+                    llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI);
   void getInterestingMemoryOperands(
-      Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting);
+      Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting,
+      llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI);
 
   bool isInterestingAlloca(const AllocaInst &AI);
   void tagAlloca(IRBuilder<> &IRB, AllocaInst *AI, Value *Tag, size_t Size);
@@ -436,6 +445,9 @@ public:
         },
         [&]() -> const PostDominatorTree & {
           return getAnalysis<PostDominatorTreeWrapperPass>().getPostDomTree();
+        },
+        [&]() -> const TargetLibraryInfo & {
+          return getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);
         });
   }
 
@@ -453,6 +465,8 @@ public:
       AU.addRequired<StackSafetyGlobalInfoWrapperPass>();
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<PostDominatorTreeWrapperPass>();
+    // We require TargetLibraryInfo to identify heap allocation and deallocation operations.
+    AU.addRequired<TargetLibraryInfoWrapperPass>();
   }
 
 private:
@@ -504,6 +518,9 @@ PreservedAnalyses HWAddressSanitizerPass::run(Module &M,
         },
         [&]() -> const PostDominatorTree & {
           return FAM.getResult<PostDominatorTreeAnalysis>(F);
+        },
+        [&]() -> const TargetLibraryInfo & {
+          return FAM.getResult<TargetLibraryAnalysis>(F);
         });
   }
   if (Modified)
@@ -785,7 +802,22 @@ Value *HWAddressSanitizer::getShadowNonTls(IRBuilder<> &IRB) {
   }
 }
 
-bool HWAddressSanitizer::ignoreAccess(Instruction *Inst, Value *Ptr) {
+bool HWAddressSanitizer::isUninterestingHeapPointer(
+  const Value *Ptr, 
+  llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
+  
+  // An uninteresting heap pointer is one that we can statically determine
+  // (a) can't point out of bounds, and (b) points to a live allocation.
+  // Using TargetLibraryAnalysis we can determine if Ptr was the result
+  // of an allocation function, and if so, as long as there is no 
+  // intervening free, and no escape of Ptr in the region between the use 
+  // and allocation, we have both (a) and (b).
+  return false;
+}
+
+bool HWAddressSanitizer::ignoreAccess(
+  Instruction *Inst, Value *Ptr,
+  llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
   // Do not instrument acesses from different address spaces; we cannot deal
   // with them.
   Type *PtrTy = cast<PointerType>(Ptr->getType()->getScalarType());
@@ -805,11 +837,17 @@ bool HWAddressSanitizer::ignoreAccess(Instruction *Inst, Value *Ptr) {
     if (SSI && SSI->stackAccessIsSafe(*Inst))
       return true;
   }
+
+  if (isUninterestingHeapPointer(Ptr, GetTLI)) {
+    return true;
+  }
+
   return false;
 }
 
 void HWAddressSanitizer::getInterestingMemoryOperands(
-    Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting) {
+    Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting,
+    llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
   // Skip memory accesses inserted by another instrumentation.
   if (I->hasMetadata("nosanitize"))
     return;
@@ -819,29 +857,29 @@ void HWAddressSanitizer::getInterestingMemoryOperands(
     return;
 
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
-    if (!ClInstrumentReads || ignoreAccess(I, LI->getPointerOperand()))
+    if (!ClInstrumentReads || ignoreAccess(I, LI->getPointerOperand(), GetTLI))
       return;
     Interesting.emplace_back(I, LI->getPointerOperandIndex(), false,
                              LI->getType(), LI->getAlign());
   } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-    if (!ClInstrumentWrites || ignoreAccess(I, SI->getPointerOperand()))
+    if (!ClInstrumentWrites || ignoreAccess(I, SI->getPointerOperand(), GetTLI))
       return;
     Interesting.emplace_back(I, SI->getPointerOperandIndex(), true,
                              SI->getValueOperand()->getType(), SI->getAlign());
   } else if (AtomicRMWInst *RMW = dyn_cast<AtomicRMWInst>(I)) {
-    if (!ClInstrumentAtomics || ignoreAccess(I, RMW->getPointerOperand()))
+    if (!ClInstrumentAtomics || ignoreAccess(I, RMW->getPointerOperand(), GetTLI))
       return;
     Interesting.emplace_back(I, RMW->getPointerOperandIndex(), true,
                              RMW->getValOperand()->getType(), None);
   } else if (AtomicCmpXchgInst *XCHG = dyn_cast<AtomicCmpXchgInst>(I)) {
-    if (!ClInstrumentAtomics || ignoreAccess(I, XCHG->getPointerOperand()))
+    if (!ClInstrumentAtomics || ignoreAccess(I, XCHG->getPointerOperand(), GetTLI))
       return;
     Interesting.emplace_back(I, XCHG->getPointerOperandIndex(), true,
                              XCHG->getCompareOperand()->getType(), None);
   } else if (auto CI = dyn_cast<CallInst>(I)) {
     for (unsigned ArgNo = 0; ArgNo < CI->arg_size(); ArgNo++) {
       if (!ClInstrumentByval || !CI->isByValArgument(ArgNo) ||
-          ignoreAccess(I, CI->getArgOperand(ArgNo)))
+          ignoreAccess(I, CI->getArgOperand(ArgNo), GetTLI))
         continue;
       Type *Ty = CI->getParamByValType(ArgNo);
       Interesting.emplace_back(I, ArgNo, false, Ty, Align(1));
@@ -1492,7 +1530,8 @@ DenseMap<AllocaInst *, AllocaInst *> HWAddressSanitizer::padInterestingAllocas(
 
 bool HWAddressSanitizer::sanitizeFunction(
     Function &F, llvm::function_ref<const DominatorTree &()> GetDT,
-    llvm::function_ref<const PostDominatorTree &()> GetPDT) {
+    llvm::function_ref<const PostDominatorTree &()> GetPDT,
+    llvm::function_ref<const TargetLibraryInfo &()> GetTLI) {
   if (&F == HwasanCtorFunction)
     return false;
 
@@ -1550,7 +1589,7 @@ bool HWAddressSanitizer::sanitizeFunction(
       if (InstrumentLandingPads && isa<LandingPadInst>(Inst))
         LandingPadVec.push_back(&Inst);
 
-      getInterestingMemoryOperands(&Inst, OperandsToInstrument);
+      getInterestingMemoryOperands(&Inst, OperandsToInstrument, GetTLI);
 
       if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(&Inst))
         if (!ignoreMemIntrinsic(MI))
