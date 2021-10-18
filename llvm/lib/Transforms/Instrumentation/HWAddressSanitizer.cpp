@@ -811,6 +811,11 @@ bool HWAddressSanitizer::isUninterestingHeapPointer(
   // of an allocation function, and if so, as long as there is no 
   // intervening free, and no escape of Ptr in the region between the use 
   // and allocation, we have both (a) and (b).
+
+  TargetLibraryInfo TLI = GetTLI();
+  if (isAllocationFn(Ptr, &TLI)) {
+    errs() << "encountered use of base pointer: " << Ptr;
+  }
   return false;
 }
 
