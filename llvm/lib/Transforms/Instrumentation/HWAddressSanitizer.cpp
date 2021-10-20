@@ -273,7 +273,7 @@ public:
   bool sanitizeFunction(Function &F,
                         llvm::function_ref<const DominatorTree &()> GetDT,
                         llvm::function_ref<const PostDominatorTree &()> GetPDT,
-                        llvm::function_ref<const TargetLibraryInfo &()> GetTLI);
+                        llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI);
   void initializeModule();
   void createHwasanCtorComdat();
 
@@ -299,11 +299,11 @@ public:
   bool instrumentMemAccess(InterestingMemoryOperand &O);
   bool isUninterestingHeapPointer(
     const Value *Ptr,
-    llvm::function_ref<const TargetLibraryInfo &()> GetTLI);
+    llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI);
   bool ignoreAccess(Instruction *Inst, Value *Ptr);
   void getInterestingMemoryOperands(
       Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting,
-      llvm::function_ref<const TargetLibraryInfo &()> GetTLI);
+      llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI);
 
   bool isInterestingAlloca(const AllocaInst &AI);
   void tagAlloca(IRBuilder<> &IRB, AllocaInst *AI, Value *Tag, size_t Size);
@@ -518,7 +518,7 @@ PreservedAnalyses HWAddressSanitizerPass::run(Module &M,
         [&]() -> const PostDominatorTree & {
           return FAM.getResult<PostDominatorTreeAnalysis>(F);
         },
-        [&]() -> const TargetLibraryInfo & {
+        [&FAM](Function &F) -> const TargetLibraryInfo & {
           return FAM.getResult<TargetLibraryAnalysis>(F);
         });
   }
@@ -803,7 +803,7 @@ Value *HWAddressSanitizer::getShadowNonTls(IRBuilder<> &IRB) {
 
 bool HWAddressSanitizer::isUninterestingHeapPointer(
   const Value *Ptr, 
-  llvm::function_ref<const TargetLibraryInfo &()> GetTLI) {
+  llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
   
   // An uninteresting heap pointer is one that we can statically determine
   // (a) can't point out of bounds, and (b) points to a live allocation.
@@ -812,8 +812,7 @@ bool HWAddressSanitizer::isUninterestingHeapPointer(
   // intervening free, and no escape of Ptr in the region between the use 
   // and allocation, we have both (a) and (b).
 
-  TargetLibraryInfo TLI = GetTLI();
-  if (isAllocationFn(Ptr, &TLI)) {
+  if (isAllocationFn(Ptr, TLI)) {
     errs() << "encountered use of base pointer: " << Ptr;
   }
   return false;
@@ -844,7 +843,7 @@ bool HWAddressSanitizer::ignoreAccess(Instruction *Inst, Value *Ptr) {
 
 void HWAddressSanitizer::getInterestingMemoryOperands(
     Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting,
-    llvm::function_ref<const TargetLibraryInfo &()> GetTLI) {
+    llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
   // Skip memory accesses inserted by another instrumentation.
   if (I->hasMetadata("nosanitize"))
     return;
@@ -1533,7 +1532,7 @@ DenseMap<AllocaInst *, AllocaInst *> HWAddressSanitizer::padInterestingAllocas(
 bool HWAddressSanitizer::sanitizeFunction(
     Function &F, llvm::function_ref<const DominatorTree &()> GetDT,
     llvm::function_ref<const PostDominatorTree &()> GetPDT,
-    llvm::function_ref<const TargetLibraryInfo &()> GetTLI) {
+    llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
   if (&F == HwasanCtorFunction)
     return false;
 
