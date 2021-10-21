@@ -816,7 +816,7 @@ bool HWAddressSanitizer::isUninterestingHeapPointer(
   // and allocation, we have both (a) and (b).
 
   if (isAllocationFn(Ptr, GetTLI)) {
-    errs() << "encountered use of base pointer: " << Ptr;
+    outs() << "HWAsan: encountered use of base pointer: " << Ptr;
     return true;
   }
   return false;
