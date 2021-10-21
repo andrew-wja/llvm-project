@@ -437,6 +437,9 @@ public:
       HWASan->setSSI(
           &getAnalysis<StackSafetyGlobalInfoWrapperPass>().getResult());
     }
+
+    auto &TLIWP = getAnalysis<TargetLibraryInfoWrapperPass>();
+    
     return HWASan->sanitizeFunction(
         F,
         [&]() -> const DominatorTree & {
@@ -445,8 +448,8 @@ public:
         [&]() -> const PostDominatorTree & {
           return getAnalysis<PostDominatorTreeWrapperPass>().getPostDomTree();
         },
-        [&]() -> const TargetLibraryInfo & {
-          return getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);
+        [&TLIWP](Function &F) -> const TargetLibraryInfo & {
+          return TLIWP.getTLI(F);
         });
   }
 
@@ -802,18 +805,19 @@ Value *HWAddressSanitizer::getShadowNonTls(IRBuilder<> &IRB) {
 }
 
 bool HWAddressSanitizer::isUninterestingHeapPointer(
-  const Value *Ptr, 
+  const Value *Ptr,
   llvm::function_ref<const TargetLibraryInfo &(Function &)> GetTLI) {
-  
+
   // An uninteresting heap pointer is one that we can statically determine
   // (a) can't point out of bounds, and (b) points to a live allocation.
   // Using TargetLibraryAnalysis we can determine if Ptr was the result
-  // of an allocation function, and if so, as long as there is no 
-  // intervening free, and no escape of Ptr in the region between the use 
+  // of an allocation function, and if so, as long as there is no
+  // intervening free, and no escape of Ptr in the region between the use
   // and allocation, we have both (a) and (b).
 
-  if (isAllocationFn(Ptr, TLI)) {
+  if (isAllocationFn(Ptr, GetTLI)) {
     errs() << "encountered use of base pointer: " << Ptr;
+    return true;
   }
   return false;
 }
