@@ -18,6 +18,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/StackSafetyAnalysis.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -725,6 +726,9 @@ bool HWAddressSanitizer::ignoreAccess(Value *Ptr) {
   // function and it makes no sense to track them as memory.
   if (Ptr->isSwiftError())
     return true;
+
+  if (isNonEscapingLocalObject(ptr))
+    return true
 
   return false;
 }
