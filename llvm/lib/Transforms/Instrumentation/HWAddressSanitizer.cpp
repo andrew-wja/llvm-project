@@ -727,7 +727,7 @@ bool HWAddressSanitizer::ignoreAccess(Value *Ptr) {
   if (Ptr->isSwiftError())
     return true;
 
-  if (isNonEscapingLocalObject(ptr))
+  if (isNonEscapingLocalObject(Ptr))
     return true
 
   return false;
