@@ -728,7 +728,7 @@ bool HWAddressSanitizer::ignoreAccess(Value *Ptr) {
     return true;
 
   if (isNonEscapingLocalObject(Ptr))
-    return true
+    return true;
 
   return false;
 }
