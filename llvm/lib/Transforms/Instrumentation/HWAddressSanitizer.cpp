@@ -17,10 +17,12 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/Analysis/BasicAliasAnalysis.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/StackSafetyAnalysis.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -212,6 +214,21 @@ static cl::opt<bool> ClUsePageAliases("hwasan-experimental-use-page-aliases",
                                       cl::desc("Use page aliasing in HWASan"),
                                       cl::Hidden, cl::init(false));
 
+static cl::opt<bool> ClIgnoreNonEscapingLocals(
+    "hwasan-ignore-non-escaping-locals",
+    cl::desc("do not instrument accesses via pointers to non-escaping local variables"), cl::Hidden,
+    cl::init(false));
+
+static cl::opt<bool> ClIgnoreConstantMemoryAccesses(
+    "hwasan-ignore-constant-memory",
+    cl::desc("do not instrument accesses via pointers to constant memory (as determined by AA)"), cl::Hidden,
+    cl::init(false));
+
+static cl::opt<bool> ClSkipShortGranuleCheck(
+    "hwasan-skip-short-granule-check",
+    cl::desc("do not emit the code for an inline short granule check if we know at compile time that the granule cannot be short"), cl::Hidden,
+    cl::init(false));
+
 namespace {
 
 bool shouldUsePageAliases(const Triple &TargetTriple) {
@@ -264,6 +281,7 @@ public:
   }
 
   void setSSI(const StackSafetyGlobalInfo *S) { SSI = S; }
+  void setAAR(BasicAAResult *A) { AAR = A; }
 
   DenseMap<AllocaInst *, AllocaInst *> padInterestingAllocas(
       const MapVector<AllocaInst *, AllocaInfo> &AllocasToInstrument);
@@ -288,6 +306,9 @@ public:
                                   unsigned AccessSizeIndex,
                                   Instruction *InsertBefore);
   void instrumentMemAccessInline(Value *Ptr, bool IsWrite,
+                                 unsigned AccessSizeIndex,
+                                 Instruction *InsertBefore);
+  void instrumentNonShortMemAccessInline(Value *Ptr, bool IsWrite,
                                  unsigned AccessSizeIndex,
                                  Instruction *InsertBefore);
   bool ignoreMemIntrinsic(MemIntrinsic *MI);
@@ -333,6 +354,7 @@ private:
   LLVMContext *C;
   Module &M;
   const StackSafetyGlobalInfo *SSI;
+  BasicAAResult *AAR;
   Triple TargetTriple;
   FunctionCallee HWAsanMemmove, HWAsanMemcpy, HWAsanMemset;
   FunctionCallee HWAsanHandleVfork;
@@ -429,6 +451,8 @@ public:
       HWASan->setSSI(
           &getAnalysis<StackSafetyGlobalInfoWrapperPass>().getResult());
     }
+    HWASan->setAAR(
+          &getAnalysis<BasicAAWrapperPass>().getResult());
     return HWASan->sanitizeFunction(
         F,
         [&]() -> const DominatorTree & {
@@ -453,6 +477,7 @@ public:
       AU.addRequired<StackSafetyGlobalInfoWrapperPass>();
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<PostDominatorTreeWrapperPass>();
+    AU.addRequired<BasicAAWrapperPass>();
   }
 
 private:
@@ -495,8 +520,11 @@ PreservedAnalyses HWAddressSanitizerPass::run(Module &M,
 
   HWAddressSanitizer HWASan(M, Options.CompileKernel, Options.Recover, SSI);
   bool Modified = false;
+  BasicAAResult *AAR = nullptr;
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
   for (Function &F : M) {
+    AAR = &FAM.getResult<BasicAA>(F);
+    HWASan.setAAR(AAR);
     Modified |= HWASan.sanitizeFunction(
         F,
         [&]() -> const DominatorTree & {
@@ -805,6 +833,19 @@ bool HWAddressSanitizer::ignoreAccess(Instruction *Inst, Value *Ptr) {
     if (SSI && SSI->stackAccessIsSafe(*Inst))
       return true;
   }
+
+  if (ClIgnoreNonEscapingLocals) {
+    if (isNonEscapingLocalObject(Ptr))
+      return true;
+  }
+
+  if (ClIgnoreConstantMemoryAccesses) {
+    SimpleAAQueryInfo AAQI = SimpleAAQueryInfo();
+    if (AAR->pointsToConstantMemory(llvm::MemoryLocation::getBeforeOrAfter(Ptr),
+                                    AAQI, true))
+    return true;
+  }
+
   return false;
 }
 
@@ -995,6 +1036,61 @@ void HWAddressSanitizer::instrumentMemAccessInline(Value *Ptr, bool IsWrite,
     cast<BranchInst>(CheckFailTerm)->setSuccessor(0, CheckTerm->getParent());
 }
 
+void HWAddressSanitizer::instrumentNonShortMemAccessInline(Value *Ptr, bool IsWrite,
+                                                           unsigned AccessSizeIndex,
+                                                           Instruction *InsertBefore) {
+  assert(!UsePageAliases);
+  const int64_t AccessInfo = getAccessInfo(IsWrite, AccessSizeIndex);
+  IRBuilder<> IRB(InsertBefore);
+
+  Value *PtrLong = IRB.CreatePointerCast(Ptr, IntptrTy);
+  Value *PtrTag = IRB.CreateTrunc(IRB.CreateLShr(PtrLong, PointerTagShift),
+                                  IRB.getInt8Ty());
+  Value *AddrLong = untagPointer(IRB, PtrLong);
+  Value *Shadow = memToShadow(AddrLong, IRB);
+  Value *MemTag = IRB.CreateLoad(Int8Ty, Shadow);
+  Value *TagMismatch = IRB.CreateICmpNE(PtrTag, MemTag);
+
+  if (HasMatchAllTag) {
+    Value *TagNotIgnored = IRB.CreateICmpNE(
+        PtrTag, ConstantInt::get(PtrTag->getType(), MatchAllTag));
+    TagMismatch = IRB.CreateAnd(TagMismatch, TagNotIgnored);
+  }
+
+  Instruction *CheckTerm =
+      SplitBlockAndInsertIfThen(TagMismatch, InsertBefore, false,
+                                MDBuilder(*C).createBranchWeights(1, 100000));
+
+  IRB.SetInsertPoint(CheckTerm);
+  InlineAsm *Asm;
+  switch (TargetTriple.getArch()) {
+  case Triple::x86_64:
+    // The signal handler will find the data address in rdi.
+    Asm = InlineAsm::get(
+        FunctionType::get(IRB.getVoidTy(), {PtrLong->getType()}, false),
+        "int3\nnopl " +
+            itostr(0x40 + (AccessInfo & HWASanAccessInfo::RuntimeMask)) +
+            "(%rax)",
+        "{rdi}",
+        /*hasSideEffects=*/true);
+    break;
+  case Triple::aarch64:
+  case Triple::aarch64_be:
+    // The signal handler will find the data address in x0.
+    Asm = InlineAsm::get(
+        FunctionType::get(IRB.getVoidTy(), {PtrLong->getType()}, false),
+        "brk #" + itostr(0x900 + (AccessInfo & HWASanAccessInfo::RuntimeMask)),
+        "{x0}",
+        /*hasSideEffects=*/true);
+    break;
+  default:
+    report_fatal_error("unsupported architecture");
+  }
+  IRB.CreateCall(Asm, PtrLong);
+  if (Recover)
+    cast<BranchInst>(CheckTerm)->setSuccessor(0, CheckTerm->getParent());
+}
+
 bool HWAddressSanitizer::ignoreMemIntrinsic(MemIntrinsic *MI) {
   if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(MI)) {
     return (!ClInstrumentWrites || ignoreAccess(MTI, MTI->getDest())) &&
@@ -1043,7 +1139,11 @@ bool HWAddressSanitizer::instrumentMemAccess(InterestingMemoryOperand &O) {
     } else if (OutlinedChecks) {
       instrumentMemAccessOutline(Addr, O.IsWrite, AccessSizeIndex, O.getInsn());
     } else {
-      instrumentMemAccessInline(Addr, O.IsWrite, AccessSizeIndex, O.getInsn());
+      if (ClSkipShortGranuleCheck && O.Alignment && *O.Alignment == O.TypeSize / 8) { // Can't have short tag
+        instrumentNonShortMemAccessInline(Addr, O.IsWrite, AccessSizeIndex, O.getInsn());
+      } else {
+        instrumentMemAccessInline(Addr, O.IsWrite, AccessSizeIndex, O.getInsn());
+      }
     }
   } else {
     IRB.CreateCall(HwasanMemoryAccessCallbackSized[O.IsWrite],
