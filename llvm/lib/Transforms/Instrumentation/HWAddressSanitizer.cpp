@@ -17,6 +17,9 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/BasicAliasAnalysis.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/StackSafetyAnalysis.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/IR/Attributes.h"
@@ -196,6 +199,14 @@ static cl::opt<bool> ClUsePageAliases("hwasan-experimental-use-page-aliases",
                                       cl::desc("Use page aliasing in HWASan"),
                                       cl::Hidden, cl::init(false));
 
+static cl::opt<bool> ClIgnoreNonEscapingLocals(
+    "hwasan-ignore-nonescaping-locals",
+    cl::desc("Ignore non-escaping locals"), cl::Hidden, cl::init(false));
+
+static cl::opt<bool> ClIgnoreConstantMemory(
+    "hwasan-ignore-constant-memory",
+    cl::desc("Ignore pointers to constant memory"), cl::Hidden, cl::init(false));
+
 namespace {
 
 bool shouldUsePageAliases(const Triple &TargetTriple) {
@@ -236,6 +247,7 @@ public:
   }
 
   void setSSI(const StackSafetyGlobalInfo *S) { SSI = S; }
+  void setAAR(BasicAAResult *A) { AAR = A; }
 
   bool sanitizeFunction(Function &F);
   void initializeModule();
@@ -290,6 +302,7 @@ private:
   LLVMContext *C;
   Module &M;
   const StackSafetyGlobalInfo *SSI;
+  BasicAAResult *AAR;
   Triple TargetTriple;
   FunctionCallee HWAsanMemmove, HWAsanMemcpy, HWAsanMemset;
   FunctionCallee HWAsanHandleVfork;
@@ -384,6 +397,9 @@ public:
       HWASan->setSSI(
           &getAnalysis<StackSafetyGlobalInfoWrapperPass>().getResult());
     }
+    if (ClIgnoreConstantMemory) {
+      HWASan->setAAR(&getAnalysis<BasicAAWrapperPass>().getResult());
+    }
     return HWASan->sanitizeFunction(F);
   }
 
@@ -399,6 +415,7 @@ public:
     // This is so we don't need to plumb TargetTriple all the way to here.
     if (mightUseStackSafetyAnalysis(DisableOptimization))
       AU.addRequired<StackSafetyGlobalInfoWrapperPass>();
+    AU.addRequired<BasicAAWrapperPass>();
   }
 
 private:
@@ -443,8 +460,15 @@ PreservedAnalyses HWAddressSanitizerPass::run(Module &M,
     SSI = &MAM.getResult<StackSafetyGlobalAnalysis>(M);
   HWAddressSanitizer HWASan(M, CompileKernel, Recover, SSI);
   bool Modified = false;
-  for (Function &F : M)
+  BasicAAResult *AAR = nullptr;
+  for (Function &F : M) {
+    if (ClIgnoreConstantMemory) {
+      auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
+      AAR = &FAM.getResult<BasicAA>(F);
+      HWASan.setAAR(AAR);
+    }
     Modified |= HWASan.sanitizeFunction(F);
+  }
   if (Modified)
     return PreservedAnalyses::none();
   return PreservedAnalyses::all();
@@ -725,6 +749,18 @@ bool HWAddressSanitizer::ignoreAccess(Value *Ptr) {
   // function and it makes no sense to track them as memory.
   if (Ptr->isSwiftError())
     return true;
+
+  if (ClIgnoreNonEscapingLocals) {
+    if (isNonEscapingLocalObject(Ptr))
+      return true;
+  }
+
+  if (ClIgnoreConstantMemory) {
+    llvm::AAQueryInfo AAQI = llvm::AAQueryInfo();
+    if (AAR->pointsToConstantMemory(llvm::MemoryLocation::getBeforeOrAfter(Ptr),
+       AAQI, true))
+      return true;
+  }
 
   return false;
 }
