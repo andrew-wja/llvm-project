@@ -207,6 +207,11 @@ static cl::opt<bool> ClIgnoreConstantMemory(
     "hwasan-ignore-constant-memory",
     cl::desc("Ignore pointers to constant memory"), cl::Hidden, cl::init(false));
 
+static cl::opt<bool> ClPruneShortGranuleCheck(
+    "hwasan-prune-short-granule-check",
+    cl::desc("Prune the code for short granule check when statically known"),
+    cl::Hidden, cl::init(false));
+
 namespace {
 
 bool shouldUsePageAliases(const Triple &TargetTriple) {
@@ -265,6 +270,9 @@ public:
   void instrumentMemAccessInline(Value *Ptr, bool IsWrite,
                                  unsigned AccessSizeIndex,
                                  Instruction *InsertBefore);
+  void instrumentMemAccessInlineNonShort(Value *Ptr, bool IsWrite,
+                                         unsigned AccessSizeIndex,
+                                         Instruction *InsertBefore);
   void instrumentMemIntrinsic(MemIntrinsic *MI);
   bool instrumentMemAccess(InterestingMemoryOperand &O);
   bool ignoreAccess(Value *Ptr);
@@ -944,6 +952,75 @@ void HWAddressSanitizer::instrumentMemAccessInline(Value *Ptr, bool IsWrite,
     cast<BranchInst>(CheckFailTerm)->setSuccessor(0, CheckTerm->getParent());
 }
 
+void HWAddressSanitizer::instrumentMemAccessInlineNonShort(Value *Ptr,
+  bool IsWrite, unsigned AccessSizeIndex, Instruction *InsertBefore) {
+  assert(!UsePageAliases);
+  const int64_t AccessInfo =
+      (CompileKernel << HWASanAccessInfo::CompileKernelShift) +
+      (HasMatchAllTag << HWASanAccessInfo::HasMatchAllShift) +
+      (MatchAllTag << HWASanAccessInfo::MatchAllShift) +
+      (Recover << HWASanAccessInfo::RecoverShift) +
+      (IsWrite << HWASanAccessInfo::IsWriteShift) +
+      (AccessSizeIndex << HWASanAccessInfo::AccessSizeShift);
+  IRBuilder<> IRB(InsertBefore);
+
+  if (OutlinedChecks) {
+    Module *M = IRB.GetInsertBlock()->getParent()->getParent();
+    Ptr = IRB.CreateBitCast(Ptr, Int8PtrTy);
+    IRB.CreateCall(Intrinsic::getDeclaration(
+                       M, Intrinsic::hwasan_check_memaccess),
+                   {ShadowBase, Ptr, ConstantInt::get(Int32Ty, AccessInfo)});
+    return;
+  }
+
+  Value *PtrLong = IRB.CreatePointerCast(Ptr, IntptrTy);
+  Value *PtrTag = IRB.CreateTrunc(IRB.CreateLShr(PtrLong, PointerTagShift),
+                                  IRB.getInt8Ty());
+  Value *AddrLong = untagPointer(IRB, PtrLong);
+  Value *Shadow = memToShadow(AddrLong, IRB);
+  Value *MemTag = IRB.CreateLoad(Int8Ty, Shadow);
+  Value *TagMismatch = IRB.CreateICmpNE(PtrTag, MemTag);
+
+  if (HasMatchAllTag) {
+    Value *TagNotIgnored = IRB.CreateICmpNE(
+        PtrTag, ConstantInt::get(PtrTag->getType(), MatchAllTag));
+    TagMismatch = IRB.CreateAnd(TagMismatch, TagNotIgnored);
+  }
+
+  Instruction *CheckTerm =
+      SplitBlockAndInsertIfThen(TagMismatch, InsertBefore, false,
+                                MDBuilder(*C).createBranchWeights(1, 100000));
+
+  IRB.SetInsertPoint(CheckTerm);
+  InlineAsm *Asm;
+  switch (TargetTriple.getArch()) {
+  case Triple::x86_64:
+    // The signal handler will find the data address in rdi.
+    Asm = InlineAsm::get(
+        FunctionType::get(IRB.getVoidTy(), {PtrLong->getType()}, false),
+        "int3\nnopl " +
+            itostr(0x40 + (AccessInfo & HWASanAccessInfo::RuntimeMask)) +
+            "(%rax)",
+        "{rdi}",
+        /*hasSideEffects=*/true);
+    break;
+  case Triple::aarch64:
+  case Triple::aarch64_be:
+    // The signal handler will find the data address in x0.
+    Asm = InlineAsm::get(
+        FunctionType::get(IRB.getVoidTy(), {PtrLong->getType()}, false),
+        "brk #" + itostr(0x900 + (AccessInfo & HWASanAccessInfo::RuntimeMask)),
+        "{x0}",
+        /*hasSideEffects=*/true);
+    break;
+  default:
+    report_fatal_error("unsupported architecture");
+  }
+  IRB.CreateCall(Asm, PtrLong);
+  if (Recover)
+    cast<BranchInst>(CheckTerm)->setSuccessor(0, CheckTerm->getParent());
+}
+
 void HWAddressSanitizer::instrumentMemIntrinsic(MemIntrinsic *MI) {
   IRBuilder<> IRB(MI);
   if (isa<MemTransferInst>(MI)) {
@@ -980,7 +1057,11 @@ bool HWAddressSanitizer::instrumentMemAccess(InterestingMemoryOperand &O) {
       IRB.CreateCall(HwasanMemoryAccessCallback[O.IsWrite][AccessSizeIndex],
                      IRB.CreatePointerCast(Addr, IntptrTy));
     } else {
-      instrumentMemAccessInline(Addr, O.IsWrite, AccessSizeIndex, O.getInsn());
+      if (ClPruneShortGranuleCheck && O.Alignment && (*O.Alignment == O.TypeSize / 8)) {
+        instrumentMemAccessInlineNonShort(Addr, O.IsWrite, AccessSizeIndex, O.getInsn());
+      } else {
+        instrumentMemAccessInline(Addr, O.IsWrite, AccessSizeIndex, O.getInsn());
+      }
     }
   } else {
     IRB.CreateCall(HwasanMemoryAccessCallbackSized[O.IsWrite],
