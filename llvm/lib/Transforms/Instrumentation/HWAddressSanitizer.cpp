@@ -29,6 +29,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
@@ -212,6 +213,11 @@ static cl::opt<bool> ClPruneShortGranuleCheck(
     cl::desc("Prune the code for short granule check when statically known"),
     cl::Hidden, cl::init(false));
 
+static cl::opt<bool> ClPruneRedundantChecks(
+    "hwasan-prune-redundant-checks",
+    cl::desc("Prune redundant checks (dominated by another check for the same pointer)"),
+    cl::Hidden, cl::init(false));
+
 namespace {
 
 bool shouldUsePageAliases(const Triple &TargetTriple) {
@@ -276,8 +282,10 @@ public:
   void instrumentMemIntrinsic(MemIntrinsic *MI);
   bool instrumentMemAccess(InterestingMemoryOperand &O);
   bool ignoreAccess(Value *Ptr);
+  bool alreadyChecked(Instruction *I, Value *Ptr, DominatorTree &DT);
   void getInterestingMemoryOperands(
-      Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting);
+      Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting,
+      DominatorTree &DT);
 
   bool isInterestingAlloca(const AllocaInst &AI);
   bool tagAlloca(IRBuilder<> &IRB, AllocaInst *AI, Value *Tag, size_t Size);
@@ -773,8 +781,34 @@ bool HWAddressSanitizer::ignoreAccess(Value *Ptr) {
   return false;
 }
 
+bool HWAddressSanitizer::alreadyChecked(Instruction *I, Value *Ptr, DominatorTree &DT) {
+  // If this instruction is dominated by another use of Ptr, then we have
+  // already emitted a check which ensures the pointer is valid at this use.
+
+  // If this feature is disabled nothing is already checked
+  if(!ClPruneRedundantChecks)
+    return false;
+
+  // If this pointer only has one use, it cannot have redundant checks
+  if(Ptr->hasOneUse())
+    return false;
+
+  // Otherwise, look at the other users.
+  // If any dominate I, this check is redundant.
+  for (User *U : Ptr->users()) {
+    if (Instruction *Inst = dyn_cast<Instruction>(U)) {
+      if (Inst == I)
+        continue;
+      if(DT.dominates(Inst, I))
+        return true;
+    }
+  }
+  return false;
+}
+
 void HWAddressSanitizer::getInterestingMemoryOperands(
-    Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting) {
+    Instruction *I, SmallVectorImpl<InterestingMemoryOperand> &Interesting,
+    DominatorTree &DT) {
   // Skip memory accesses inserted by another instrumentation.
   if (I->hasMetadata("nosanitize"))
     return;
@@ -784,12 +818,12 @@ void HWAddressSanitizer::getInterestingMemoryOperands(
     return;
 
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
-    if (!ClInstrumentReads || ignoreAccess(LI->getPointerOperand()))
+    if (!ClInstrumentReads || ignoreAccess(LI->getPointerOperand()) || alreadyChecked(I, LI->getPointerOperand(), DT))
       return;
     Interesting.emplace_back(I, LI->getPointerOperandIndex(), false,
                              LI->getType(), LI->getAlign());
   } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-    if (!ClInstrumentWrites || ignoreAccess(SI->getPointerOperand()))
+    if (!ClInstrumentWrites || ignoreAccess(SI->getPointerOperand()) || alreadyChecked(I, LI->getPointerOperand(), DT))
       return;
     Interesting.emplace_back(I, SI->getPointerOperandIndex(), true,
                              SI->getValueOperand()->getType(), SI->getAlign());
@@ -1432,6 +1466,7 @@ bool HWAddressSanitizer::sanitizeFunction(Function &F) {
   SmallVector<Instruction *, 8> RetVec;
   SmallVector<Instruction *, 8> LandingPadVec;
   DenseMap<AllocaInst *, std::vector<DbgVariableIntrinsic *>> AllocaDbgMap;
+  DominatorTree DT = DominatorTree(F);
   for (auto &BB : F) {
     for (auto &Inst : BB) {
       if (InstrumentStack)
@@ -1457,7 +1492,7 @@ bool HWAddressSanitizer::sanitizeFunction(Function &F) {
       if (InstrumentLandingPads && isa<LandingPadInst>(Inst))
         LandingPadVec.push_back(&Inst);
 
-      getInterestingMemoryOperands(&Inst, OperandsToInstrument);
+      getInterestingMemoryOperands(&Inst, OperandsToInstrument, DT);
 
       if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(&Inst))
         IntrinToInstrument.push_back(MI);

@@ -30,6 +30,11 @@ foreach(l ${SUPPORT_SYSTEM_LIBS} ${WINDOWSMANIFEST_SYSTEM_LIBS})
 endforeach()
 string(REPLACE ";" " " SYSTEM_LIBS "${SYSTEM_LIBS}")
 
+# Respect the value of LLVM_ENABLE_TERMINFO
+if(NOT ${LLVM_ENABLE_TERMINFO})
+  string(REPLACE "-ltinfo" "" SYSTEM_LIBS "${SYSTEM_LIBS}")
+endif()
+
 # Fetch target specific compile options, e.g. RTTI option
 get_property(COMPILE_FLAGS TARGET llvm-config PROPERTY COMPILE_FLAGS)
 
